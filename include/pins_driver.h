@@ -1,8 +1,8 @@
-#ifndef PINS_TEENSY_H
-#define PINS_TEENSY_H
+#ifndef _PINS_DRIVER_H
+#define _PINS_DRIVER_H
 
 // -----------------------------------------------------------------------------
-// Pin Definitions:
+// Pin Definitions for Driver Teensy 4.1:
 // -----------------------------------------------------------------------------
 
 // SPI Pins
