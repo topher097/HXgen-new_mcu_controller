@@ -5,7 +5,7 @@
 #include <Arduino.h>
 
 // -----------------------------------------------------------------------------
-// Pin Definitions:
+// Pin Definitions for arduin MEGA 2560:
 // -----------------------------------------------------------------------------
 
 // SPI Pins (hardware SPI)
@@ -32,7 +32,7 @@ uint8_t UPSTREAM_PRESSURE_SENSOR_PIN = A1;       // Pin A16
 uint8_t DOWNSTREAM_PRESSURE_SENSOR_PIN = A2;     // Pin A15
 
 // Status LED pins
-uint8_t STATUS_LED_PIN = 13;
+uint8_t STATUS_PIN = 45;
 
 
 

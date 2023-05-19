@@ -3,20 +3,20 @@
 
 // Begin the wire interface for the sensor
 void FlowSensor::begin(){
-	SensorWire.begin();
+	_wire->begin();
 }
 
-// Run the printStatus function to print the status of the I2C bus
-void FlowSensor::printStatus(Print& Ser){
-	SensorWire.printStatus(Ser);
-}
+// // Run the printStatus function to print the status of the I2C bus
+// void FlowSensor::printStatus(Print& Ser){
+// 	_wire->printStatus(Ser);
+// }
 
 // Soft reset function which takes the Wire object as an argument
 void FlowSensor::soft_reset(){
 	do {
-		SensorWire.beginTransmission(0x00);
-		SensorWire.write(0x06);
-		ret = SensorWire.endTransmission();
+		_wire->beginTransmission(0x00);
+		_wire->write(0x06);
+		ret = _wire->endTransmission();
 		if (ret != 0) { // Error sending soft reset command, retry
 			Serial.print(ret); Serial.print(", ");
 			Serial.println("Error during soft reset command, retrying...");
@@ -32,10 +32,10 @@ void FlowSensor::set_continuous_mode(){
 	// measurement mode (H20 calibration), then read 3x (2 bytes + 1 CRC byte) from the sensor.
 	// To perform a IPA based measurement, send 0x3615 instead.
 	// Check datasheet for available measurement commands.
-	SensorWire.beginTransmission(FLOW_SENSOR_ADDRESS);
-	SensorWire.write(MEASUREMENT_MODE_B1);
-	SensorWire.write(MEASUREMENT_MODE_B2);
-	ret = SensorWire.endTransmission();
+	_wire->beginTransmission(FLOW_SENSOR_ADDRESS);
+	_wire->write(MEASUREMENT_MODE_B1);
+	_wire->write(MEASUREMENT_MODE_B2);
+	ret = _wire->endTransmission();
 	if (ret != 0) {
 		Serial.print("Error during write measurement mode command for the "); Serial.print(sensor_name); Serial.print(" sensor, retrying...\n");
 	}
@@ -45,16 +45,16 @@ void FlowSensor::set_continuous_mode(){
 // Measurement function which takes the Wire object as an argument and returns the corrected flow rate and temperature for the sensor on that Wire object
 void FlowSensor::measure_flow(){
 	delay(25); 
-	int qty = SensorWire.requestFrom(FLOW_SENSOR_ADDRESS, 3);
+	int qty = _wire->requestFrom(FLOW_SENSOR_ADDRESS, 3);
 	if (qty < 3) {
 		String temp = String(qty) + ", Error while reading flow measurement for the " + sensor_name + " sensor, retrying...\n";
 		Serial.println(temp);
 	}
 	else {
 		//Serial.println("Reading measurement...");
-		signed_flow_value  = SensorWire.read() << 8; // read the MSB from the sensor
-		signed_flow_value |= SensorWire.read();      // read the LSB from the sensor
-		sensor_flow_crc    = SensorWire.read();
+		signed_flow_value  = _wire->read() << 8; // read the MSB from the sensor
+		signed_flow_value |= _wire->read();      // read the LSB from the sensor
+		sensor_flow_crc    = _wire->read();
 
 		scaled_flow_value = ((float) signed_flow_value) / SCALE_FACTOR_FLOW;
 	}	

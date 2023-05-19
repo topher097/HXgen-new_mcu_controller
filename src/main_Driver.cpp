@@ -34,3 +34,17 @@ AudioConnection          patchCord4(tonesweep2, 0, i2s3, 1);
 AudioConnection          patchCord5(noise2, 0, i2s2, 1);
 AudioConnection          patchCord6(tonesweep1, 0, i2s3, 0);
 // GUItool: end automatically generated code
+
+
+void setup(){
+
+
+
+};
+
+
+void loop(){
+
+
+
+};

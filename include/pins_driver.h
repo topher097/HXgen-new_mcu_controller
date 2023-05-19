@@ -1,42 +1,35 @@
 #ifndef _PINS_DRIVER_H
 #define _PINS_DRIVER_H
 
+#pragma once
+#include <Arduino.h>
+
 // -----------------------------------------------------------------------------
-// Pin Definitions for Driver Teensy 4.1:
+// Pin Definitions for Driver Teensy 4.0:
 // -----------------------------------------------------------------------------
 
-// SPI Pins
-const int SPI_MOSI = 11;
-const int SPI_MISO = 12;
-const int SPI_SCK = 13;
 
-// Flow sensor I2C pins
-const int INLET_FLOW_SENSOR_SCL = 19;
-const int INLET_FLOW_SENSOR_SDA = 18;
-const int OUTLET_FLOW_SENSOR_SCL = 17;
-const int OUTLET_FLOW_SENSOR_SDA = 16;
+// Thermistor input pins
+const uint8_t THERMISTOR_1_INPUT_PIN = A0;
+const uint8_t THERMISTOR_2_INPUT_PIN = A1;
+const uint8_t THERMISTOR_3_INPUT_PIN = A2;
+const uint8_t THERMISTOR_4_INPUT_PIN = A3;
+const uint8_t THERMISTOR_5_INPUT_PIN = A4;
+const uint8_t THERMISTOR_6_INPUT_PIN = A5;
+const uint8_t THERMISTOR_7_INPUT_PIN = A6;
+const uint8_t THERMISTOR_8_INPUT_PIN = A7;
+const uint8_t THERMISTOR_9_INPUT_PIN = A8;
+const uint8_t THERMISTOR_10_INPUT_PIN = A9;
+const uint8_t THERMISTOR_11_INPUT_PIN = A10;
+const uint8_t THERMISTOR_12_INPUT_PIN = A11;
+const uint8_t THERMISTOR_13_INPUT_PIN = A12;
+const uint8_t THERMISTOR_14_INPUT_PIN = A13;
 
-// Heater block control pins
-const int HEATER_BLOCK_RELAY_CONTROL_PIN = 15;
+// EasyTransfer RXTX pins
+const uint8_t EASY_TRANSFER_RX_PIN = 15;        // RX3
+const uint8_t EASY_TRANSFER_TX_PIN = 14;        // TX3
 
-// Rope heater constrol pins
-const int ROPE_HEATER_RELAY_CONTROL_PIN = 14;
-const int INLET_FLUID_THERMOCOUPLE_CS_PIN = 37;
-
-// Flow valve sensor pins
-const int VALVE_POTENTIOMETER_PIN = 41;            // Pin A17
-const int UPSTREAM_PRESSURE_SENSOR_PIN = 40;       // Pin A16
-const int DOWNSTREAM_PRESSURE_SENSOR_PIN = 39;     // Pin A15
-
-// TFT display pins
-const int TFT_CS = 10;          // Chip select control pin for hardware SPI
-const int TFT_DC = 9;           // Data/command pin
-const int TOUCH_YP = 24;        // Must be analog pin, A10
-const int TOUCH_XP = 25;        // Must be analog pin, A11
-const int TOUCH_YM = 26;        // Can be digital pin
-const int TOUCH_XM = 27;        // Can be digital pin
-
-// OTHER PINS
-const int STATUS_LED_BLINK_PIN = 13;  // Status LED pin
+// Status LED pins, synced with Monitor and MEGA Status LED
+const int STATUS_LED_BLINK_PIN = 14;  // Status LED pin
 
 #endif

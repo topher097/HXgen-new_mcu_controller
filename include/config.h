@@ -2,14 +2,17 @@
 #define CONFIG_H
 
 #pragma once
-#include <Arduino.h>          // Arduino library for Arduino specific types
-#include <data.h>
+#include <Arduino.h> 
+#include <data.h>               // Data structures for EasyTransfer and saving to the log file
 
-#ifdef __AVR_ATmega2560__
+#if DEVICE == 0                 // Arduino Mega 2560 (mega)  
     #include <pins_mega.h>
 #endif 
-#ifdef __IMXRT1062__
-    #include <pins_teensy.h>
+#if DEVICE == 1                 // Teensy 4.0 (driver)
+    #include <pins_driver.h>
+#endif
+#if DEVICE == 2                 // Teensy 4.1 (monitor)
+    #include <pins_monitor.h>
 #endif
 
 
@@ -39,50 +42,51 @@ const uint16_t window_size_ms = 5000;              // Window size for the PID co
 const byte debounce_delay_ms = 15;                 // Debounce delay in ms for the PID controller
 uint16_t window_start_time;                        // Start time for the PID controller, don't set
 uint16_t next_switch_time;                         // Calculated switch time for the PID controller, don't set
-boolean relay_status = false;                      // PID controller window open flag
+bool relay_status = false;                         // PID controller window open flag
+bool rope_heater_enable = false;                   // Enable/disable the rope heater
 
 // -----------------------------------------------------------------------------
 // Other random settings, adjust if needed:
 // -----------------------------------------------------------------------------
 // Status LED blink variables
+bool blink_led_state  = false;             // flag for blinking the status LED on/off
 const int blink_delay_ms = 1000;           // delay in ms
 
 // Heat flux of heaters (0 to 100)
 float heat_flux = 0.0;                   // Heat flux of the heaters in W/m^2
 float max_heat_flux = 100.0;             // Maximum possible heat flux of the heaters in W/m^2
+bool heater_block_enable = false;        // Enable/disable the heater block heater cartridge
 uint16_t heat_flux_pwm;
 
 // Measurement delay time (for flow sensors, valve position, valve diff pressure), and update delay time for digital output
-const int measurement_update_delay_ms = 100;    // Delay between measurements and update output in ms
+const int measurement_update_delay_ms = 50;    // Delay between measurements and update output in ms
 
 // Screen settings
 const int screen_touch_resistance = 268;  // ohms b/w +X and -X pins (for pressure)
-const uint16_t touchXMin = 875;           // Min value of X touch reading
-const uint16_t touchXMax = 215;           // Max value of X touch reading
-const uint16_t touchYmin = 330;           // Min value of Y touch reading
-const uint16_t touchYMax = 800;           // Max value of Y touch reading
-const uint16_t min_pressure = 50;         // Minimum pressure to register a touch
-const uint16_t max_pressure = 300;       // Maximum pressure to register a touch
+const int16_t touchXMin = 875;            // Min value of X touch reading
+const int16_t touchXMax = 215;            // Max value of X touch reading
+const int16_t touchYMin = 330;            // Min value of Y touch reading
+const int16_t touchYMax = 800;            // Max value of Y touch reading
+const int16_t min_pressure = 50;          // Minimum pressure to register a touch
+const int16_t max_pressure = 300;         // Maximum pressure to register a touch
 const int SCREEN_WIDTH = 480;             // screen width in pixels
 const int SCREEN_HEIGHT = 320;            // screen height in pixels
 const int SCREEN_ROTATION = 3;            // screen rotation in degrees
 const int SCREEN_BRIGHTNESS = 255;        // screen brightness, 0-255
-const int screen_update_delay_ms = 67;    // screen update delay in ms (about 15 fps)
+const int screen_update_delay_ms = 200;    // screen update delay in ms (about 5 fps)
 const int touch_pressure_min = 10;        // minimum touch pressure to register a touch
 
 // Serial communication settings
-bool print_to_serial = true;            // print to serial port
-const int SERIAL_BAUD = 19200;          // baud rate for serial communication
+bool print_to_serial = false;            // print to serial port
+const int SERIAL_BAUD = 14400;          // baud rate for serial communication
 bool wait_for_serial = true;            // wait for serial connection before starting program
 char swTxBuffer[256];                   // I2C serial transmit buffer
 char swRxBuffer[256];                   // I2C serial receive buffer
 
 // Analog (ADC) settings
-const int16_t analog_resolution = 12;                          // 12 bit resolution
+const int16_t analog_resolution = 10;                          // bits of resolution on ADC
 const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
 const int8_t analog_vref = 3.3;                                // Analog reference voltage, 5.0V for ArduinoMega2560      
-
-bool heaters_on = false;                // Flag for heaters on/off
 
 // Min and max values for the conversion functions
 float min_pwm_output = 0.0;
@@ -92,6 +96,22 @@ float max_flow_rate = 1000.0;      // ml/min
 float min_temp = 0.0;              // deg C
 float max_temp = 100.0;            // deg C
 float min_heat_flux = 0.0;         // W/m^2
+
+// Data recording variables
+bool start_stop_recording = false;      // Start/stop recording data (shared between the mega and the monitor, set by start/stop button)
+
+
+// -----------------------------------------------------------------------------
+// Piezo variables
+// -----------------------------------------------------------------------------
+float piezo_1_freq = 1000;          // Frequency of piezo 1 in Hz
+float piezo_2_freq = 1000;          // Frequency of piezo 2 in Hz
+float piezo_1_vpp  = 0.1;           // Voltage Peak-to-Peak of piezo 1 in V, amplitude is 0.5x this
+float piezo_2_vpp  = 0.1;           // Voltage Peak-to-Peak of piezo 2 in V, amplitude is 0.5x this
+float piezo_1_phase = 0.0;          // Phase of piezo 1 in degrees
+float piezo_2_phase = 0.0;          // Phase of piezo 2 in degrees
+float piezo_1_enable = false;       // Enable/disable piezo 1
+float piezo_2_enable = false;       // Enable/disable piezo 2
 
 
 // -----------------------------------------------------------------------------
