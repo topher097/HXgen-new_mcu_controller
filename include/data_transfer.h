@@ -26,8 +26,6 @@ struct dataSave {
     uint32_t numrecords;                    // Number of records saved to the SD card (one record is one line in csv file)      
     uint8_t *cptr;                          // pointer to last storage location to check out-of-bounds writes
 };
-// Holds the pointer data struct which is saved to the SD card, can be accessed from any script (updated in main.cpp write_data_save_struct)
-volatile struct dataSave *last_save_data;
 
 // Holds the data struct which is sent to the Driver Teensy
 struct dataDriver {
@@ -39,7 +37,13 @@ struct dataDriver {
     uint16_t piezo_2_phase;     // Phase of right channel signal in degrees
     bool piezo_1_enable;        // Enable pin for piezo driver 1
     bool piezo_2_enable;        // Enable pin for piezo driver 2
-};
+} driver_data;
 
+struct dataMega {
+    float inlet_flow_sensor_ml_min;         // mL/min from the inlet flow sensor
+    float outlet_flow_sensor_ml_min;        // mL/min from the outlet flow sensor
+    float thermistor_13_temp;               // Temperature of the thermistor 13 in C
+    float thermistor_14_temp;               // Temperature of the thermistor 14 in C
+} mega_data;
 
 #endif // _DATA_H_

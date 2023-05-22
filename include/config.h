@@ -5,9 +5,9 @@
 #include <Arduino.h> 
 #include <data_transfer.h>          // Brings dataSave and dataDriver structs into scope
 
-#if DEVICE == 0                 // Arduino Mega 2560 (mega)  
+#if DEVICE == 0                 // Mega flow
     #include <pins_mega.h>
-#endif 
+#endif
 #if DEVICE == 1                 // Teensy 4.0 (driver)
     #include <pins_driver.h>
 #endif
@@ -61,7 +61,7 @@ bool heater_block_enable = false;        // Enable/disable the heater block heat
 uint16_t heat_flux_pwm;
 
 // Measurement delay time (for flow sensors, valve position, valve diff pressure), and update delay time for digital output
-const int measurement_update_delay_ms = 50;    // Delay between measurements and update output in ms
+const int measurement_update_delay_ms = 100;    // Delay between measurements and update output in ms
 
 // Screen settings
 const int screen_touch_resistance = 268;  // ohms b/w +X and -X pins (for pressure)
@@ -86,7 +86,7 @@ bool wait_for_serial = true;            // wait for serial connection before sta
 // Analog (ADC) settings
 const int16_t analog_resolution = 12;                          // bits of resolution on ADC
 const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
-const int8_t analog_vref = 3.3;                                // Analog reference voltage, 5.0V for ArduinoMega2560      
+const float analog_vref = 3.3;                                 // Analog reference voltage, 5.0V for ArduinoMega2560      
 
 // Min and max values for the conversion functions
 float min_pwm_output = 0.0;
@@ -115,7 +115,29 @@ bool piezo_2_enable = false;            // Enable/disable piezo 2
 
 
 // -----------------------------------------------------------------------------
-// Conversions functions for outputs to values for later processing of LMS data
+// Thermistor variables
+// -----------------------------------------------------------------------------
+const uint16_t analog_mega_max = 1024;              // Max analog resolution for the mega, 10 bits
+const uint16_t thermistor_upper_R1 = 10000;         // ohms
+const uint16_t thermistor_lower_R1 = 10000;         // ohms
+float thermistor_1_temp = 0.0;                      // Temperature of thermistor 1 in deg C, upper R1
+float thermistor_2_temp = 0.0;                      // Temperature of thermistor 2 in deg C, upper R1
+float thermistor_3_temp = 0.0;                      // Temperature of thermistor 3 in deg C, upper R1
+float thermistor_4_temp = 0.0;                      // Temperature of thermistor 4 in deg C, upper R1
+float thermistor_5_temp = 0.0;                      // Temperature of thermistor 5 in deg C, upper R1
+float thermistor_6_temp = 0.0;                      // Temperature of thermistor 6 in deg C, upper R1
+float thermistor_7_temp = 0.0;                      // Temperature of thermistor 7 in deg C, lower R1
+float thermistor_8_temp = 0.0;                      // Temperature of thermistor 8 in deg C, lower R1
+float thermistor_9_temp = 0.0;                      // Temperature of thermistor 9 in deg C, lower R1
+float thermistor_10_temp = 0.0;                     // Temperature of thermistor 10 in deg C, lower R1
+float thermistor_11_temp = 0.0;                     // Temperature of thermistor 11 in deg C, lower R1
+float thermistor_12_temp = 0.0;                     // Temperature of thermistor 12 in deg C, lower R1
+float thermistor_13_temp = 0.0;                     // Temperature of thermistor 13 in deg C, lower R1  
+float thermistor_14_temp = 0.0;                     // Temperature of thermistor 14 in deg C, lower R1
+
+
+// -----------------------------------------------------------------------------
+// Conversions functions for inputs and outputs
 // -----------------------------------------------------------------------------
 
 // Map function for float inputs
@@ -123,23 +145,61 @@ float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
-// Convert the flow rate from flow sensors
-uint16_t ml_per_min_to_pwm_output(float flow_rate_ml_per_min) {
-    // this equates to 2.55 ml/min per PWM output step
-    return (uint16_t)(mapf(flow_rate_ml_per_min, min_flow_rate, max_flow_rate, min_pwm_output, max_pwm_output));
+
+#include "RT_Table.h"  // The header file we created
+
+// Function to get the resistance across the thermistor
+float calculate_thermistor_resistance(int analogReadValue, int maxAnalogRead, float referenceVoltage, int seriesResistor) {
+    float voltageAcrossThermistor = (analogReadValue / float(maxAnalogRead)) * referenceVoltage;
+    float thermistorResistance = seriesResistor * ((referenceVoltage / voltageAcrossThermistor) - 1.0);
+    return thermistorResistance;
 }
 
-// Convert the temperature from the temperature sensor
-uint16_t degC_to_pwm_output(float temp_deg_celcius) {
-    // this equates to 0.255 degC per PWM output step
-    return (uint16_t)(mapf(temp_deg_celcius, min_temp, max_temp, min_pwm_output, max_pwm_output));
+// Function to estimate temperature using the lookup table
+float lookup_thermistor_temperature(float resistance) {
+    for (int i = 0; i < RT_TABLE_SIZE - 1; i++) {
+        float lowResistance = RT_TABLE[i][0];
+        float highResistance = RT_TABLE[i + 1][0];
+
+        // if the resistance is within a range in the table
+        if (lowResistance <= resistance && resistance <= highResistance) {
+            float lowTemp = RT_TABLE[i][1];
+            float highTemp = RT_TABLE[i + 1][1];
+
+            // linear interpolation
+            float temp = lowTemp + (resistance - lowResistance) * (highTemp - lowTemp) / (highResistance - lowResistance);
+            return temp;
+        }
+    }
+    // if the resistance is not within the range of the table, return an error value
+    return -999.9;
 }
 
-// Convert the heat flux to a PWM output
-uint16_t heat_flux_to_pwm_output(float heat_flux){
-    // this equates to 51 mW/m^2 per PWM output step
-    return (uint16_t)(mapf(heat_flux, min_heat_flux, max_heat_flux, min_pwm_output, max_pwm_output));
+// Function to convert analog read value to temperature
+float convert_thermistor_analog_to_celcius(int analogReadValue, int maxAnalogRead, float referenceVoltage, int seriesResistor) {
+    float resistance = calculate_thermistor_resistance(analogReadValue, maxAnalogRead, referenceVoltage, seriesResistor);
+    float temperature = lookup_thermistor_temperature(resistance);
+    return temperature;
 }
+
+
+// // Convert the flow rate from flow sensors
+// uint16_t ml_per_min_to_pwm_output(float flow_rate_ml_per_min) {
+//     // this equates to 2.55 ml/min per PWM output step
+//     return (uint16_t)(mapf(flow_rate_ml_per_min, min_flow_rate, max_flow_rate, min_pwm_output, max_pwm_output));
+// }
+
+// // Convert the temperature from the temperature sensor
+// uint16_t degC_to_pwm_output(float temp_deg_celcius) {
+//     // this equates to 0.255 degC per PWM output step
+//     return (uint16_t)(mapf(temp_deg_celcius, min_temp, max_temp, min_pwm_output, max_pwm_output));
+// }
+
+// // Convert the heat flux to a PWM output
+// uint16_t heat_flux_to_pwm_output(float heat_flux){
+//     // this equates to 51 mW/m^2 per PWM output step
+//     return (uint16_t)(mapf(heat_flux, min_heat_flux, max_heat_flux, min_pwm_output, max_pwm_output));
+// }
 
 
 

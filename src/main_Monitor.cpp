@@ -1,6 +1,6 @@
 /*
 Main file for the Teensy 4.1 that:
-    measures all 14 thermistors,
+    measures all 12 thermistors,
     measures the 2 flow sensors using I2C,
     controls the TFT display,
     communicates with the Driver Teensy to send the signals to the piezo amplifier via EasyTransfer,
@@ -15,12 +15,8 @@ Main file for the Teensy 4.1 that:
 
 // Library includes
 #include <Arduino.h>
-//#include <SoftwareWire.h>
-#include <i2c_driver.h>
-#include <i2c_driver_wire.h>				// I2C device library for Teensy 4.1
-
+#include <i2c_driver_wire.h>		// I2C library
 #include <Adafruit_HX8357.h>		// TFT display library
-#include <Adafruit_GFX.h>			// GFX library
 #include <Adafruit_MAX31855.h>		// Thermocouple library
 #include <timer.h>					// Timer library
 #include <QuickPID.h>				// PID library
@@ -36,6 +32,17 @@ Main file for the Teensy 4.1 that:
 #include "pages/inlet_temp_page.h"
 
 
+// Create FlowSensor objects for the inlet and outlet sensors
+const String inlet_string = "inlet";
+const String outlet_string = "outlet";
+// SoftwareWire inlet_wire(INLET_FLOW_SENSOR_SDA, INLET_FLOW_SENSOR_SCL);
+// SoftwareWire outlet_wire(OUTLET_FLOW_SENSOR_SDA, OUTLET_FLOW_SENSOR_SCL);
+I2CDriverWire *inlet_wire = &Wire;
+//I2CDriverWire *outlet_wire = &Wire1;
+FlowSensor inlet_sensor(inlet_string, inlet_wire);
+//FlowSensor outlet_sensor(outlet_string, outlet_wire);
+String temp;		// Temporary string for printing to serial monitor
+
 // Init the screen and touchscreen objects
 Adafruit_HX8357 tftlcd = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 TouchScreen touch_screen(TOUCH_XP, TOUCH_YP, TOUCH_XM, TOUCH_YM, screen_touch_resistance);
@@ -43,7 +50,8 @@ TouchScreen touch_screen(TOUCH_XP, TOUCH_YP, TOUCH_XM, TOUCH_YM, screen_touch_re
 // Create the Simple_GFX object
 uint16_t tft_width = 480;       // Can set these to the dimensions of your screen
 uint16_t tft_height = 320;     
-Simple_GFX<Adafruit_HX8357> sim_gfx(&tftlcd, 1, tft_width, tft_height);
+uint16_t rotation = 1;
+Simple_GFX<Adafruit_HX8357> sim_gfx(&tftlcd, rotation, tft_width, tft_height);
 
 // // Init the PageManager object
 PageManager<Adafruit_HX8357> page_manager;
@@ -54,8 +62,8 @@ MainPage<Adafruit_HX8357> main_page(&page_manager, &sim_gfx, &touch_screen, min_
 //InletTempPage inlet_temp_page(&page_manager, &tft, &touch_screen, min_pressure, max_pressure, touchXMin, touchXMax, touchYMin, touchYMax);
 
 // Initialize the EasyTransfer object
-EasyTransfer ETin;		// EasyTransfer object for receiving data from the Driver Teensy
-EasyTransfer ETout;		// EasyTransfer object for sending data to the Driver Teensy
+EasyTransfer ETin_mega;		// EasyTransfer object for receiving data from the Mega for flow sensor data and low thermistor data
+EasyTransfer ETout;			// EasyTransfer object for sending data to the Driver Teensy
 
 // // Initialize the data logger object
 DataLogger data_logger;
@@ -70,15 +78,6 @@ QuickPID ropePID(&inlet_fluid_temp_measured, &rope_control_output, &inlet_fluid_
 				 QuickPID::dMode::dOnMeas,
 				 QuickPID::iAwMode::iAwClamp,
 				 QuickPID::Action::direct);
-
-// Create FlowSensor objects for the inlet and outlet sensors
-const String inlet_string = "inlet";
-const String outlet_string = "outlet";
-// SoftwareWire inlet_wire(INLET_FLOW_SENSOR_SDA, INLET_FLOW_SENSOR_SCL);
-// SoftwareWire outlet_wire(OUTLET_FLOW_SENSOR_SDA, OUTLET_FLOW_SENSOR_SCL);
-FlowSensor inlet_sensor(inlet_string, &Wire);
-FlowSensor outlet_sensor(outlet_string, &Wire1);
-String temp;		// Temporary string for printing to serial monitor
 
 // Create timers
 Timer statusLEDTimer;
@@ -103,15 +102,15 @@ void measure_sensors() {
 	
 	// --------------------------------- FLOW SENSORS ---------------------------------
 	inlet_sensor.measure_flow();
-	outlet_sensor.measure_flow();
+	//outlet_sensor.measure_flow();
 	inlet_flow_sensor_ml_min = inlet_sensor.scaled_flow_value;
-	outlet_flow_sensor_ml_min = outlet_sensor.scaled_flow_value;
+	//outlet_flow_sensor_ml_min = outlet_sensor.scaled_flow_value;
 
 	// Print the flow rate and temp to the serial monitor
 	if (print_to_serial) {
 		temp = inlet_sensor.get_name() + ": " + String(inlet_sensor.scaled_flow_value) + " " + String(UNIT_FLOW);
 		Serial.print(temp); Serial.print(",     ");
-		temp = outlet_sensor.get_name() + ": " + String(outlet_sensor.scaled_flow_value) + " " + String(UNIT_FLOW);
+		//temp = outlet_sensor.get_name() + ": " + String(outlet_sensor.scaled_flow_value) + " " + String(UNIT_FLOW);
 		Serial.print(temp); Serial.print(",     ");
 	}
 
@@ -123,14 +122,12 @@ void measure_sensors() {
 
 // -------------------------------- DATA LOGGER FUNCTIONS --------------------------------
 // https://forum.pjrc.com/threads/60809-Generic-data-logger-object/page4?highlight=fast+datalogger
-#define SAMPLERATE 50				// Samples per second to collect and save (ms time between samples is 1/SAMPLERATE)
-#define BUFFERMSEC 200				// Buffer limit write speed in milliseconds
-#define SYNCINTERVAL 1000			// Sync interval in milliseconds
-char logfilename[64];
-
-// Make sure that enough room is left for the rest of the program
-#define MAXBUFFER 7000000
-uint8_t *mybuffer = (uint8_t *)0x40000000;
+#define SAMPLERATE 20				// Samples per second to collect and save (ms time between samples is 1/SAMPLERATE)
+#define BUFFERMSEC 100				// Buffer limit write speed in milliseconds
+#define SYNCINTERVAL 1500			// Sync interval in milliseconds
+char logfilename[64];				// filename for the log file
+#define MAXBUFFER 8000000			// Make sure that enough room is left for the rest of the program
+uint8_t *mybuffer = (uint8_t *)0x80000000;								// pointer to the buffer
 const char compileTime [] = "  Compiled on " __DATE__ " " __TIME__;		// Compile time for this program
 bool logging = false;				// flag  if logging is running or not
 bool endplayback = true;			// flag to end the playback
@@ -163,7 +160,7 @@ void start_logging(void) {
 	logging = true;
 	create_file_name(logfilename);
 	numrecs = 0;
-	data_logger.StartLogger(logfilename, 1000, &logger_isr);  // sync once per second
+	data_logger.StartLogger(logfilename, SYNCINTERVAL, &logger_isr);  // sync once per second
 	filemillis = 0; // Opening file takes ~ 40mSec
 	filemicros = 0;
 	Serial.print("\n");
@@ -242,9 +239,6 @@ void write_data_save_struct( void* vdp ) {
 
 	numrecs++;								// Increment the number of records
 
-	// Save the last data struct for updating the screen
-	last_save_data = (volatile struct dataSave *)dp;
-
 	// // If first recordings, then print to serial monitor as format microtime, millitime, numrecords, cptr
 	// if (numrecs < 20){
 	//   Serial.printf("%lu, %lu, %lu, %p\n", dp->microtime, dp->millitime, dp->numrecords, dp->cptr);
@@ -271,7 +265,6 @@ void my_verify(void *vdp) {
 		pbrecnum = dp->numrecords;
 		verifyerrors++;
 	}
-
 	// Increment the verify record number and display the record number every 10000 records
 	pbrecnum++;
 	if ((pbrecnum % 10000) == 0)Serial.printf("Recnum: %lu\n", pbrecnum);
@@ -314,7 +307,7 @@ void setup() {
 
 	delay(1500);
 	Serial.println(F("Starting..."));
-	delay(1500);
+	delay(100);
 
 
 	// --------------------------- DATA LOGGER SETUP ---------------------------
@@ -336,23 +329,22 @@ void setup() {
 	}
 	data_logger.AttachCollector(&write_data_save_struct);		// attach the customized callback function
 	data_logger.AttachDisplay(&my_binary_display, 5000);		// display written data once per 5 seconds
-	//data_logger.AttachWriter(&my_binary_writer);				// attach the customized callback function
 	data_logger.AttachPlayback(&my_verify);						// check for missing records
 
 	// --------------------------- FLOW SENSOR AND THERMOCOUPLE SETUP ---------------------------
 	thermocouple.begin();						// on SPI bus
+	//inlet_sensor.get_bus()->timeout_millis = 1000;			// set timeout to 1s
+
 	inlet_sensor.begin();
-	outlet_sensor.begin();
+	//outlet_sensor.begin();
 	inlet_sensor.soft_reset();		
-	outlet_sensor.soft_reset();
+	//outlet_sensor.soft_reset();
 	inlet_sensor.set_continuous_mode();
-	outlet_sensor.set_continuous_mode();
+	//outlet_sensor.set_continuous_mode();
 	
 	
 	// --------------------------- SIMPLE_GFX TFT DISPLAY SETUP ---------------------------
 	sim_gfx.init();
-	//tftlcd.begin();		// For the display
-	sim_gfx.setRotation(1);
 	sim_gfx.fillScreen(HX8357_GREEN);
 
 	// --------------------------- TFT DISPLAY SETUP CHECKING ---------------------------
@@ -433,7 +425,6 @@ void loop() {
 
 	// --------------------------- Update the data logger ---------------------------
 	TLoggerStat *tsp;
-	float mbytes;
 	tsp =  data_logger.GetStatus();	
 	data_logger.CheckLogger();     		// Check for data to write to SD at regular intervals
 	if (logging) {
@@ -457,32 +448,32 @@ void loop() {
 	} 
 		
 	// --------------------------- Control the rope heater PID loop ---------------------------
-	// // Measure the temperature of the inlet fluid (thermocouple)			
-	// inlet_fluid_temp_measured = thermocouple.readCelsius(); 
+	// Measure the temperature of the inlet fluid (thermocouple)			
+	inlet_fluid_temp_measured = thermocouple.readCelsius(); 
 
-	// // Run the PID loop
-	// // rope_control_output is the TIME in milliseconds that the rope heater should be on, this is calculated in the PID controller
-	// // the control pins need to be PWM enabled for this to work
-	// unsigned long ms_now = millis();
-	// if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
-	// if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
-	// 	if (ms_now > next_switch_time){
-	// 		relay_status = true;
-	// 		next_switch_time = ms_now + debounce_delay_ms;
-	// 		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
-	// 	}
-	// } else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
-	// 	if (ms_now > next_switch_time){
-	// 		relay_status = false;
-	// 		next_switch_time = ms_now + debounce_delay_ms;
-	// 		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
-	// 	}
-	// }
+	// Run the PID loop
+	// rope_control_output is the TIME in milliseconds that the rope heater should be on, this is calculated in the PID controller
+	// the control pins need to be PWM enabled for this to work
+	unsigned long ms_now = millis();
+	if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
+	if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
+		if (ms_now > next_switch_time){
+			relay_status = true;
+			next_switch_time = ms_now + debounce_delay_ms;
+			digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
+		}
+	} else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
+		if (ms_now > next_switch_time){
+			relay_status = false;
+			next_switch_time = ms_now + debounce_delay_ms;
+			digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
+		}
+	}
 
-	// // --------------------------- Control the heater block ---------------------------
-	// // Update the PWM output of the heater block pin to match the desired heat flux
-	// heat_flux_pwm = map(heat_flux, 0, max_heat_flux, 0, 255);
-	// analogWrite(HEATER_BLOCK_RELAY_CONTROL_PIN, heat_flux_pwm);
+	// --------------------------- Control the heater block ---------------------------
+	// Update the PWM output of the heater block pin to match the desired heat flux
+	heat_flux_pwm = map(heat_flux, 0, max_heat_flux, 0, 255);
+	analogWrite(HEATER_BLOCK_RELAY_CONTROL_PIN, heat_flux_pwm);
 
 
 	delay(2);		// Delay to allow the data logger to run, this is the minimum delay for the data logger to run

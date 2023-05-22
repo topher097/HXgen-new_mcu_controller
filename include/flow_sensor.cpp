@@ -3,7 +3,9 @@
 
 // Begin the wire interface for the sensor
 void FlowSensor::begin(){
-	_wire->setClock(400 * 1000);
+	_wire->setClock(100 * 1000U);		// Set the clock speed to x * 1kHz
+	// _wire->setSDA(_sdaPin);
+	// _wire->setSCL(_sclPin);
 	_wire->begin();
 }
 

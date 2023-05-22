@@ -8,12 +8,10 @@
 */
 
 #pragma once
-//#include <SoftwareWire.h>   // Software I2C library
 #include <Arduino.h>		// Arduino library for Arduino specific functions
-#include <Wire.h>
+#include <SoftwareWire.h>
 #include <config.h>			// Include the config.h header file
-#include <i2c_driver.h>		
-#include <i2c_driver_wire.h>	
+
 
 
 
@@ -27,13 +25,18 @@ public:
 	void calibrate_flow( void );
 	void set_continuous_mode( void );
 
-	//FlowSensor(const String &name, const int _sdaPin, const int _sclPin): sensor_name(name), SensorWire(_sdaPin, _sclPin){};
-	FlowSensor(const String &name, I2CDriverWire *wire): sensor_name(name), _wire(wire){};
+	//FlowSensor(const String &name, const int _sdaPin, const int _sclPin): sensor_name(name), _wire(_sdaPin, _sclPin){};
+	FlowSensor(const String &name, SoftwareWire *wire): 
+				sensor_name(name), _wire(wire){};
 	~FlowSensor(){};
 
 	String get_name() const { 
 		return sensor_name; 
 	}
+
+	// SoftwareWire *get_bus() const { 
+	// 	return _wire; 
+	// }
 	
 
 	volatile float scaled_flow_value = 0;	
@@ -41,13 +44,13 @@ public:
 private:
 	volatile int ret;
 	const String sensor_name;
-	//TwoWire *_wire;
-	I2CDriverWire *_wire;
+	SoftwareWire *_wire;
 	volatile uint16_t sensor_flow_value;
 	volatile byte aux_crc;
 	volatile uint16_t aux_value;
 	volatile byte sensor_flow_crc;
 	volatile int16_t signed_flow_value;
+
 };
 
 #endif
