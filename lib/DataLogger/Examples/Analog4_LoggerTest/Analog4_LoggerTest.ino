@@ -5,9 +5,12 @@
    medium speed Analog  logger with ASCII file output
 
    M. Borgerson   5/13/2020
+   Update 5/18/2020
+
+   Updated 6/26/2020 for multiple-logger version
  **********************************************************/
 
-#include <Datalogger.h>
+#include <DataLogger.h>
 // instantiate a datalogger object
 DataLogger mydl;
 
@@ -56,8 +59,15 @@ void setup() {
   Serial.print("\n\nData Logger Example ");
   Serial.println(compileTime);
   analogReadResolution(12);
+  // Setting pinMode to INPUT_DISABLE  turns off weak digital keeper resistors that
+  // can affect inputs when connected to a moderately high output impedance device.
+  // Thanks to @JBeale for discovering this.
+  pinMode(A0, INPUT_DISABLE);  // 4 ADC inputs without digital "keeper" drive on pin
+  pinMode(A1, INPUT_DISABLE);
+  pinMode(A2, INPUT_DISABLE);
+  pinMode(A3, INPUT_DISABLE);
   mydl.SetDBPrint(true);  // turn on debug output
-  if (!mydl.InitStorage()) { // try starting SD Card and file system
+  if (!mydl.InitStorage(NULL)) { // try starting SD Card and file system
     // initialize SD Card failed
     fastBlink();
   }
@@ -98,7 +108,7 @@ void StartLogging(void) {
   Serial.println("Starting Logger.");
   logging = true;
   MakeFileName(logfilename);
-  mydl.StartLogger(logfilename, 1000);  // sync once per second
+  mydl.StartLogger(logfilename, 1000 &LoggerISR);  // sync once per second
   filemillis = 40; // Opening file takes ~ 40mSec
 
   Serial.print("\n");
@@ -149,7 +159,7 @@ void GetStatus(void) {
  ******************************************************/
 
 // called from the datalogger timer handler
-//  this version collects only timing data
+//  this version collects  4 analog signals with basic Arduino analog input
 void myCollector(  void* vdp) {
   volatile struct datrec *dp;
   // Note: logger status keeps track of max collection time

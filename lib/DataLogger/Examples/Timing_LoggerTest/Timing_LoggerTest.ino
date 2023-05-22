@@ -5,9 +5,11 @@
    Fast binary logger
 
    M. Borgerson   5/13/2020
+
+   Updated 6/26/2020 for multiple-logger version
  **********************************************************/
 
-#include <Datalogger.h>
+#include <DataLogger.h>
 // instantiate a datalogger object
 DataLogger mydl;
 
@@ -58,7 +60,7 @@ void setup() {
   Serial.println(compileTime);
 
   mydl.SetDBPrint(true);  // turn on debug output
-  if (!mydl.InitStorage()) { // try starting SD Card and file system
+  if (!mydl.InitStorage(NULL)) { // try starting SD Card and file system
     // initialize SD Card failed
     fastBlink();
   }
@@ -98,7 +100,7 @@ void StartLogging(void) {
   Serial.println("Starting Logger.");
   logging = true;
   MakeFileName(logfilename);
-  mydl.StartLogger(logfilename, 1000);  // sync once per second
+  mydl.StartLogger(logfilename, 1000, &LoggerISR);  // sync once per second
   filemillis = 40; // Opening file takes ~ 40mSec
   Serial.print("\n");
 }

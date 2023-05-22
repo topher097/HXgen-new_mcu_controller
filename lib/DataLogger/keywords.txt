@@ -1,0 +1,45 @@
+#######################################
+# Syntax Coloring Map For Generic Logger
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+DataLogger	KEYWORD1
+TLoggerStat	KEYWORD1
+TLoggerConfig	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+MakeFileName	KEYWORD2
+InitStorage	KEYWORD2
+InitializeBuffer	KEYWORD2
+CheckLogger	KEYWORD2
+AttachCollector	KEYWORD2
+AttachWriter	KEYWORD2
+AttachPlayback	KEYWORD2
+AttachDisplay	KEYWORD2
+AutoFile	KEYWORD2
+StartLogger	KEYWORD2
+StopLogger	KEYWORD2
+PlaybackFile	KEYWORD2
+GetStatus	KEYWORD2
+ResetStatus	KEYWORD2
+ShowStatus	KEYWORD2
+SetDBPrint	KEYWORD2
+SetStream	KEYWORD2
+ShowDirectory	KEYWORD2
+FormatSD	KEYWORD2
+LoadConfig	KEYWORD2
+SaveConfig	KEYWORD2
+ShowConfig	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+MAXNAMELENGTH	LITERAL1
+MAXSTRUCTSIZE	LITERAL1
+FSMARGIN	LITERAL1
+LEDPIN	LITERAL1

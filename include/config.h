@@ -3,7 +3,7 @@
 
 #pragma once
 #include <Arduino.h> 
-#include <data.h>               // Data structures for EasyTransfer and saving to the log file
+#include <data_transfer.h>          // Brings dataSave and dataDriver structs into scope
 
 #if DEVICE == 0                 // Arduino Mega 2560 (mega)  
     #include <pins_mega.h>
@@ -26,6 +26,8 @@ const char UNIT_FLOW[] = " ml/min";                 // physical unit of the flow
 const char UNIT_TEMP[] = " deg C";                  // physical unit of the temperature measurement
 const int MEASUREMENT_MODE_B1 = 0x36;               // First byte of the measurement mode command, IPA calibration
 const int MEASUREMENT_MODE_B2 = 0x08;               // Second byte of the measurement mode command, IPA calibration
+volatile float inlet_flow_sensor_ml_min;            // mL/min from the inlet flow sensor
+volatile float outlet_flow_sensor_ml_min;           // mL/min from the outlet flow sensor
 
 // -----------------------------------------------------------------------------
 // Rope heater control specific settings, adjust if needed:
@@ -78,13 +80,11 @@ const int touch_pressure_min = 10;        // minimum touch pressure to register 
 
 // Serial communication settings
 bool print_to_serial = false;            // print to serial port
-const int SERIAL_BAUD = 14400;          // baud rate for serial communication
+const int SERIAL_BAUD = 9600;          // baud rate for serial communication
 bool wait_for_serial = true;            // wait for serial connection before starting program
-char swTxBuffer[256];                   // I2C serial transmit buffer
-char swRxBuffer[256];                   // I2C serial receive buffer
 
 // Analog (ADC) settings
-const int16_t analog_resolution = 10;                          // bits of resolution on ADC
+const int16_t analog_resolution = 12;                          // bits of resolution on ADC
 const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
 const int8_t analog_vref = 3.3;                                // Analog reference voltage, 5.0V for ArduinoMega2560      
 
@@ -104,14 +104,14 @@ bool start_stop_recording = false;      // Start/stop recording data (shared bet
 // -----------------------------------------------------------------------------
 // Piezo variables
 // -----------------------------------------------------------------------------
-float piezo_1_freq = 1000;          // Frequency of piezo 1 in Hz
-float piezo_2_freq = 1000;          // Frequency of piezo 2 in Hz
-float piezo_1_vpp  = 0.1;           // Voltage Peak-to-Peak of piezo 1 in V, amplitude is 0.5x this
-float piezo_2_vpp  = 0.1;           // Voltage Peak-to-Peak of piezo 2 in V, amplitude is 0.5x this
-float piezo_1_phase = 0.0;          // Phase of piezo 1 in degrees
-float piezo_2_phase = 0.0;          // Phase of piezo 2 in degrees
-float piezo_1_enable = false;       // Enable/disable piezo 1
-float piezo_2_enable = false;       // Enable/disable piezo 2
+float piezo_1_freq = 1000.0;        // Frequency of piezo 1 in Hz
+float piezo_2_freq = 1000.0;        // Frequency of piezo 2 in Hz
+float piezo_1_vpp  = 0.25;             // Voltage Peak-to-Peak of piezo 1 in V, amplitude is 0.5x this
+float piezo_2_vpp  = 0.25;             // Voltage Peak-to-Peak of piezo 2 in V, amplitude is 0.5x this
+float piezo_1_phase = 0.0;             // Phase of piezo 1 in radians
+float piezo_2_phase = 0.0;             // Phase of piezo 2 in radians
+bool piezo_1_enable = false;            // Enable/disable piezo 1
+bool piezo_2_enable = false;            // Enable/disable piezo 2
 
 
 // -----------------------------------------------------------------------------

@@ -5,9 +5,10 @@
    Fast binary logger
    
    M. Borgerson   5/13/2020
+   Updated for multiple-logger version 6/26/2020
  **********************************************************/
 
-#include <Datalogger.h>
+#include <DataLogger.h>
 // instantiate a datalogger object
 DataLogger mydl;
 
@@ -58,7 +59,7 @@ void setup() {
   Serial.println(compileTime);
   //Storage_init();  // MTP not ready yet
   mydl.SetDBPrint(true);  // turn on debug output
-  if (!mydl.InitStorage()) { // try starting SD Card and file system
+  if (!mydl.InitStorage(NULL)) { // try starting SD Card and file system
     // initialize SD Card failed
     fastBlink();
   }
@@ -102,7 +103,7 @@ void loop() {
       Serial.println("Starting Logger.");
       logging = true;
       MakeFileName(logfilename);
-      mydl.StartLogger(logfilename, 1000);  // sync once per second
+      mydl.StartLogger(logfilename, 1000, &LoggerISR);  // sync once per second
       filemillis = 40; // Opening file takes ~ 40mSec
 
       Serial.print("\n");
@@ -222,7 +223,6 @@ void loop() {
   //  data.  Note that you can also have triggered data logging by only passing
   //  back a non-zero length when a trigger value in the data appears.
   uint16_t myBinaryWriter(void *bdp, void* rdp){
-    float triggervalue;
     uint16_t rval;
     struct datrec *dp;
     static float outputvals[4]; // The logger will come back and fetch this data

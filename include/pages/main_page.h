@@ -16,8 +16,8 @@ public:
              : _manager(manager), _sim_gfx(sim_gfx), _ts(ts), 
              _min_pressure(min_pressure), _max_pressure(max_pressure), 
              _minx(min_x), _maxx(max_x), _miny(min_y), _maxy(max_y){
-                font = &FreeSans9pt7b;              // FONT USED FOR STRINGS
-                //font = NULL;
+                font = &FreeSans9pt7b;              // FONT USED FOR STATIC STRINGS
+                dynamic_font = &FreeSans9pt7b;                // FONT USED FOR DYNAMIC STRINGS
              };
 
     void get_sim_gfx_pointer_addr(void){
@@ -112,11 +112,11 @@ public:
     void draw_dynamic_strings(void){
          // First fill the background of the dynamic strings to clear any old values with the background color
         // Can optimize this to not draw rectangles in the line gap but this is fine for now
-        int16_t x = dynamic_string_start_x;
-        int16_t y = string_start_y;
-        uint16_t w = static_string_start_x2 - dynamic_string_start_x;
-        uint16_t h = string_start_y + (num_lines * string_vertical_offset);
-        _sim_gfx->fillRect(x, y, w, h, screen_background_color);
+        // int16_t x = dynamic_string_start_x;
+        // int16_t y = string_start_y;
+        // uint16_t w = static_string_start_x2 - dynamic_string_start_x;
+        // uint16_t h = string_start_y + (num_lines * string_vertical_offset);
+        // _sim_gfx->fillRect(x, y, w, h, screen_background_color);
         
         // Iterate through the first dynamic strings and draw them to the screen
         int16_t x_tl, y_tl;
@@ -125,7 +125,7 @@ public:
             x_tl = dynamic_string_start_x;
             y_tl = string_start_y + (i * string_vertical_offset);
             temp_string = String(*first_dynamic_string_variables[i], dynamic_decimal_places);
-            Utils<TFTClass>::print_text_tl_coords(_sim_gfx, x_tl, y_tl, temp_string, string_color, text_size, font);
+            Utils<TFTClass>::print_text_tl_coords(_sim_gfx, x_tl, y_tl, temp_string, string_color, text_size, dynamic_font, screen_background_color);
         }
 
         // Iterate through the second dynamic strings and draw them to the screen, skip the NULL values
@@ -137,7 +137,7 @@ public:
             } else {
                 temp_string = String(*second_dynamic_string_variables[i], dynamic_decimal_places);
             }
-            Utils<TFTClass>::print_text_tl_coords(_sim_gfx, x_tl, y_tl, temp_string, string_color, text_size, font);
+            Utils<TFTClass>::print_text_tl_coords(_sim_gfx, x_tl, y_tl, temp_string, string_color, text_size, dynamic_font, screen_background_color);
         }
     };
 
@@ -205,6 +205,7 @@ public:
 
 private:  
     const GFXfont *font;
+    const GFXfont *dynamic_font;
     PageManager<TFTClass> *_manager;        // Pointer to the page manager object
     Simple_GFX<TFTClass> *_sim_gfx;             // Pointer to the simple gfx sim_gfx object
     TouchScreen *_ts;                       // Pointer to the touch screen object
@@ -245,38 +246,33 @@ private:
     uint16_t text_height;           // The height of the text in pixels
 
     // DYNAMIC AND STATIC STRINGS AND ARRAY
-    static const int8_t num_lines = 7;              // Number of lines of text to be printed
+    static const int8_t num_lines = 6;              // Number of lines of text to be printed
     int8_t dynamic_decimal_places = 2;              // Number of decimal places to print for dynamic strings
-    String first_static_string_lines[num_lines] = {"Valve Flow Rate:", 
-                                                    "Inlet Flow Rate:", 
+    String first_static_string_lines[num_lines] = { "Inlet Flow Rate:", 
                                                     "Outlet Flow Rate:", 
                                                     "Inlet Fluid Temp:",
                                                     "Heat Flux:", 
                                                     "Piezo 1 Freq/V:", 
                                                     "Piezo 2 Freq/V:"};
-    float *first_dynamic_string_variables[num_lines]  = {&save_data.inlet_valve_ml_min, 
-                                                        &save_data.inlet_flow_sensor_ml_min, 
-                                                        &save_data.outlet_flow_sensor_ml_min, 
-                                                        &save_data.inlet_fluid_temp, 
-                                                        &save_data.heat_flux,
-                                                        &save_data.piezo_1_freq, 
-                                                        &save_data.piezo_2_freq};
-    String middle_static_string_lines[num_lines] = {"mL/min", 
-                                                    "mL/min",
+    volatile float *first_dynamic_string_variables[num_lines]  = {&inlet_flow_sensor_ml_min, 
+                                                        &outlet_flow_sensor_ml_min, 
+                                                        &inlet_fluid_temp_measured, 
+                                                        &heat_flux,
+                                                        &piezo_1_freq, 
+                                                        &piezo_2_freq};
+    String middle_static_string_lines[num_lines] = {"mL/min",
                                                     "mL/min",
                                                     "C  / ", 
                                                     "W/cm^2",
                                                     "Hz / ",
                                                     "Hz / "};
-    float *second_dynamic_string_variables[num_lines] = {&null, 
-                                                        &null,  
+    volatile float *second_dynamic_string_variables[num_lines] = {&null,  
                                                         &null,
                                                         &inlet_fluid_temp_setpoint, 
                                                         &null,
-                                                        &save_data.piezo_1_vpp, 
-                                                        &save_data.piezo_2_vpp};
+                                                        &piezo_1_vpp, 
+                                                        &piezo_2_vpp};
     String end_static_string_lines[num_lines] = {"", 
-                                                "", 
                                                 "", 
                                                 "C",
                                                 "", 

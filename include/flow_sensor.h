@@ -12,6 +12,8 @@
 #include <Arduino.h>		// Arduino library for Arduino specific functions
 #include <Wire.h>
 #include <config.h>			// Include the config.h header file
+#include <i2c_driver.h>		
+#include <i2c_driver_wire.h>	
 
 
 
@@ -26,7 +28,7 @@ public:
 	void set_continuous_mode( void );
 
 	//FlowSensor(const String &name, const int _sdaPin, const int _sclPin): sensor_name(name), SensorWire(_sdaPin, _sclPin){};
-	FlowSensor(const String &name, TwoWire *wire): sensor_name(name), _wire(wire){};
+	FlowSensor(const String &name, I2CDriverWire *wire): sensor_name(name), _wire(wire){};
 	~FlowSensor(){};
 
 	String get_name() const { 
@@ -34,13 +36,13 @@ public:
 	}
 	
 
-	volatile float scaled_flow_value;	
+	volatile float scaled_flow_value = 0;	
 	
 private:
 	volatile int ret;
 	const String sensor_name;
-	TwoWire *_wire;
-	//SoftwareWire SensorWire;
+	//TwoWire *_wire;
+	I2CDriverWire *_wire;
 	volatile uint16_t sensor_flow_value;
 	volatile byte aux_crc;
 	volatile uint16_t aux_value;

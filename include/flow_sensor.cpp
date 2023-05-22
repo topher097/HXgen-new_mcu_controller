@@ -3,6 +3,7 @@
 
 // Begin the wire interface for the sensor
 void FlowSensor::begin(){
+	_wire->setClock(400 * 1000);
 	_wire->begin();
 }
 
@@ -16,9 +17,9 @@ void FlowSensor::soft_reset(){
 	do {
 		_wire->beginTransmission(0x00);
 		_wire->write(0x06);
-		ret = _wire->endTransmission();
+		ret = _wire->endTransmission(false);
 		if (ret != 0) { // Error sending soft reset command, retry
-			Serial.print(ret); Serial.print(", ");
+			Serial.print(ret); Serial.print(", "); Serial.print(sensor_name); Serial.print(", ");
 			Serial.println("Error during soft reset command, retrying...");
 			delay(500); // wait long enough for chip reset to complete
 		}

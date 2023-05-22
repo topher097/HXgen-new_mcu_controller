@@ -7,6 +7,9 @@
 // -----------------------------------------------------------------------------
 // Pin Definitions for Monitor Teensy 4.1:
 // -----------------------------------------------------------------------------
+// Analog reference input pin (from the heater sensor board)
+const uint8_t ANALOG_REF_PIN = A2;
+
 
 // Thermistor input pins
 const uint8_t THERMISTOR_1_INPUT_PIN = A9;
