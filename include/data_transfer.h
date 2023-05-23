@@ -28,7 +28,7 @@ struct dataSave {
 };
 
 // Holds the data struct which is sent to the Driver Teensy
-struct dataDriver {
+struct dataMonitorToDriver {
     uint32_t piezo_1_freq;      // Frequency of left channel piezo in Hz
     uint32_t piezo_2_freq;      // Frequency of right channel piezo in Hz
     uint16_t piezo_1_vpp;       // Amplitude of sine wave 1 (left cahnnel);
@@ -37,13 +37,18 @@ struct dataDriver {
     uint16_t piezo_2_phase;     // Phase of right channel signal in degrees
     bool piezo_1_enable;        // Enable pin for piezo driver 1
     bool piezo_2_enable;        // Enable pin for piezo driver 2
-} driver_data;
+    
+} monitor_to_driver_data;
+
+// Holds the data struct which is sent to the Monitor Teensy
+struct dataDriverToMonitor {
+    float inlet_flow_sensor_ml_min;         // mL/min from the inlet flow sensor
+    float outlet_flow_sensor_ml_min;        // mL/min from the outlet flow sensor
+} driver_to_monitor_data;
 
 struct dataMega {
     float inlet_flow_sensor_ml_min;         // mL/min from the inlet flow sensor
     float outlet_flow_sensor_ml_min;        // mL/min from the outlet flow sensor
-    float thermistor_13_temp;               // Temperature of the thermistor 13 in C
-    float thermistor_14_temp;               // Temperature of the thermistor 14 in C
 } mega_data;
 
 #endif // _DATA_H_

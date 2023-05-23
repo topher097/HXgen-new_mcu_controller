@@ -12,7 +12,7 @@
 #endif
 #include <Vector.h>             // Vector library (for the text)
 #include <TouchScreen.h>        // Touch screen library (for the buttons)
-#include <typeinfo>
+
 
 // Fonts from the gfx library > Fonts folder
 #include <Fonts/FreeSansBold12pt7b.h>   // Used for button text
@@ -694,7 +694,7 @@ public:
     void init_button_center_coords(int16_t x, int16_t y, int16_t width, int16_t height, 
                                          uint16_t fill_color, uint16_t border_color, uint16_t press_fill_color, uint16_t press_border_color,
                                          int16_t border_width, int16_t corner_radius, int16_t border_padding,
-                                         uint16_t text_color, int16_t text_size, String *label, ButtonType type){
+                                         uint16_t text_color, int16_t text_size, String label, ButtonType type){
         // Set button properties
         _x = x - (width/2);           // convert to top left coord
         _y = y - (height/2);          // convert to top left coord
@@ -709,8 +709,8 @@ public:
         _border_padding = border_padding;
         _text_color = text_color;
         _text_size = text_size;
-        _label = Utils<TFTClass>::text_to_vector_of_lines(label);
-        //_input_label = &label;
+        _label_vector_lines = Utils<TFTClass>::text_to_vector_of_lines(&label);
+        _label_string = &label;
         _type = type;                                         
     };
 
@@ -718,7 +718,7 @@ public:
     void init_button_top_left_coords(int16_t x_top_left, int16_t y_top_left, int16_t width, int16_t height, 
                                          uint16_t fill_color, uint16_t border_color, uint16_t press_fill_color, uint16_t press_border_color,
                                          int16_t border_width, int16_t corner_radius, int16_t border_padding,
-                                         uint16_t text_color, int16_t text_size, String *label, ButtonType type){
+                                         uint16_t text_color, int16_t text_size, String label, ButtonType type){
         // Set button properties
         _x = x_top_left;
         _y = y_top_left;
@@ -733,8 +733,8 @@ public:
         _border_padding = border_padding;
         _text_color = text_color;
         _text_size = text_size;
-        _label = Utils<TFTClass>::text_to_vector_of_lines(label);
-        //_input_label = &label;
+        _label_vector_lines = Utils<TFTClass>::text_to_vector_of_lines(&label);
+        _label_string = &label;
         _type = type;
     };
 
@@ -797,10 +797,10 @@ public:
         int16_t x1, y1;
         uint16_t w1, h1;
         int16_t x_tl, y_tl;
-        int8_t num_lines = _label.size();
+        int8_t num_lines = _label_vector_lines.size();
 
         Serial.print(F("Num lines in label: ")); Serial.println(num_lines);
-        Serial.print(F("Printing button label: ")); Serial.println(_input_label);
+        Serial.print(F("Printing button label: ")); Serial.println(_label_string);
         
         // Calculate the vertical offset for the text due to multiple lines
         StringInfo temp_info = Utils<TFTClass>::get_text_info(_sim_gfx, Utils<TFTClass>::DUMMY_STR, _text_size, font);
@@ -808,7 +808,7 @@ public:
 
         for (int8_t i = 0; i < num_lines; i++) {
             // Get the line string
-            String line_string = _label[i];   
+            String line_string = _label_vector_lines[i];   
             // Get the width and height of the text
             _sim_gfx->getTextBounds(line_string, 0, 0, &x1, &y1, &w1, &h1);
             // Print the text
@@ -857,7 +857,7 @@ public:
 
     // Get the button's label
     String get_label(void){
-        return _input_label;
+        return _label_string;
     };
 
     // Check to see if the SCREEN is pressed and return true if it is
@@ -892,10 +892,10 @@ public:
     //     int16_t x1, y1;
     //     uint16_t w1, h1;
     //     int16_t x_tl, y_tl;
-    //     int8_t num_lines = _label.size();
+    //     int8_t num_lines = _label_vector_lines.size();
 
     //     Serial.print(F("Num lines in label: ")); Serial.println(num_lines);
-    //     Serial.print(F("Printing button label: ")); Serial.println(_input_label);
+    //     Serial.print(F("Printing button label: ")); Serial.println(_label_string);
         
     //     // Calculate the vertical offset for the text due to multiple lines
     //     StringInfo temp_info = Utils<TFTClass>::get_text_info(_sim_gfx, Utils<TFTClass>::DUMMY_STR, _text_size, font);
@@ -903,7 +903,7 @@ public:
 
     //     for (int8_t i = 0; i < num_lines; i++) {
     //         // Get the line string
-    //         String line_string = _label[i];   
+    //         String line_string = _label_vector_lines[i];   
     //         // Get the width and height of the text
     //         _sim_gfx->getTextBounds(line_string, 0, 0, &x1, &y1, &w1, &h1);
     //         // Print the text
@@ -935,8 +935,8 @@ private:
     TouchScreen *_ts;               // Pointer to the TouchScreen object
     const GFXfont *font;
 
-    StringVector _label;            // Label for button as a StringVector type, where each line is printed on a new line
-    String _input_label;       // Label for button as a String type, takes the input text and stores it
+    StringVector _label_vector_lines;            // Label for button as a StringVector type, where each line is printed on a new line
+    String _label_string;       // Label for button as a String type, takes the input text and stores it
     int16_t _x, _y;                 // X and Y coordinate of top left corner
     int16_t _w, _h;                 // Height and Width of button rectangle
     uint16_t _fill_color;           // Color of button fill

@@ -8,9 +8,11 @@
 */
 
 #pragma once
-#include <Arduino.h>		// Arduino library for Arduino specific functions
-#include <SoftwareWire.h>
+#include <Arduino.h>		// Arduino library for Arduino specific function
+#include <Wire.h>
+//#include <SoftwareWire.h>
 #include <config.h>			// Include the config.h header file
+//#include <i2c_driver_wire.h>	// Include the i2c_driver_wire header file
 
 
 
@@ -26,7 +28,9 @@ public:
 	void set_continuous_mode( void );
 
 	//FlowSensor(const String &name, const int _sdaPin, const int _sclPin): sensor_name(name), _wire(_sdaPin, _sclPin){};
-	FlowSensor(const String &name, SoftwareWire *wire): 
+	// FlowSensor(const String &name, SoftwareWire *wire): 
+	// 			sensor_name(name), _wire(wire){};
+	FlowSensor(const String &name, TwoWire *wire): 
 				sensor_name(name), _wire(wire){};
 	~FlowSensor(){};
 
@@ -44,7 +48,7 @@ public:
 private:
 	volatile int ret;
 	const String sensor_name;
-	SoftwareWire *_wire;
+	TwoWire *_wire;
 	volatile uint16_t sensor_flow_value;
 	volatile byte aux_crc;
 	volatile uint16_t aux_value;

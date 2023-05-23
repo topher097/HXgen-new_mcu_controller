@@ -168,7 +168,7 @@ public:
                 buttons[i]->init_button_top_left_coords(x, y, w, h, 
                                                     button_fill_color, button_outline_color, button_pressed_fill_color, button_outline_color,
                                                     button_outline_thickness, button_corner_radius, button_border_padding,
-                                                    button_text_color, button_text_size, &label, Button<TFTClass>::ButtonType::MOMENTARY);
+                                                    button_text_color, button_text_size, label, Button<TFTClass>::ButtonType::MOMENTARY);
                 buttons[i]->set_min_max_pressure(min_pressure, max_pressure);
                 buttons[i]->set_min_max_x_y_values(_minx, _maxx, _miny, _maxy);
             } else {
@@ -176,7 +176,7 @@ public:
                 buttons[i]->init_button_top_left_coords(x, y, w, h, 
                                                     start_stop_fill_color, start_stop_outline_color, start_stop_pressed_fill_color, start_stop_outline_color,
                                                     button_outline_thickness, button_corner_radius, button_border_padding,
-                                                    button_text_color, button_text_size, &label, Button<TFTClass>::ButtonType::TOGGLE);
+                                                    button_text_color, button_text_size, label, Button<TFTClass>::ButtonType::TOGGLE);
             };
         };
     };            

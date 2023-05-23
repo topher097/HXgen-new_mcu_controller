@@ -15,33 +15,23 @@ Main file for the Teensy 4.1 that:
 
 // Library includes
 #include <Arduino.h>
-#include <i2c_driver_wire.h>		// I2C library
 #include <Adafruit_HX8357.h>		// TFT display library
 #include <Adafruit_MAX31855.h>		// Thermocouple library
 #include <timer.h>					// Timer library
 #include <QuickPID.h>				// PID library
 #include <pageManager.h>            // PageManager library, brings Simple_GFX and all other class objest into scope
 #include <EasyTransfer.h>			// EasyTransfer library
-#include <Datalogger.h>				// DataLogger library (in lib folder)
+#include <DataLogger.h>				// DataLogger library (in lib folder)
 
 // Local includes
-#include "flow_sensor.cpp"
 #include "config.h"
 #include "pages/main_page.h"
 #include "pages/piezo_page.h"
 #include "pages/inlet_temp_page.h"
 
-
-// Create FlowSensor objects for the inlet and outlet sensors
-const String inlet_string = "inlet";
-const String outlet_string = "outlet";
-// SoftwareWire inlet_wire(INLET_FLOW_SENSOR_SDA, INLET_FLOW_SENSOR_SCL);
-// SoftwareWire outlet_wire(OUTLET_FLOW_SENSOR_SDA, OUTLET_FLOW_SENSOR_SCL);
-I2CDriverWire *inlet_wire = &Wire;
-//I2CDriverWire *outlet_wire = &Wire1;
-FlowSensor inlet_sensor(inlet_string, inlet_wire);
-//FlowSensor outlet_sensor(outlet_string, outlet_wire);
-String temp;		// Temporary string for printing to serial monitor
+#define TO_MEGA_SERIAL Serial1		// Serial port to mega (monitor teensy using rx1 and tx1 pins)
+#define TO_DRIVER_SERIAL Serial8	// Serial port to driver (monitor teensy using rx8 and tx8 pins)
+String temp;						// Temporary string for printing to serial monitor
 
 // Init the screen and touchscreen objects
 Adafruit_HX8357 tftlcd = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
@@ -62,7 +52,7 @@ MainPage<Adafruit_HX8357> main_page(&page_manager, &sim_gfx, &touch_screen, min_
 //InletTempPage inlet_temp_page(&page_manager, &tft, &touch_screen, min_pressure, max_pressure, touchXMin, touchXMax, touchYMin, touchYMax);
 
 // Initialize the EasyTransfer object
-EasyTransfer ETin_mega;		// EasyTransfer object for receiving data from the Mega for flow sensor data and low thermistor data
+EasyTransfer ETin;				// EasyTransfer object for receiving data from the Driver for flow sensor data
 EasyTransfer ETout;			// EasyTransfer object for sending data to the Driver Teensy
 
 // // Initialize the data logger object
@@ -95,29 +85,18 @@ void blink_status_led() {
 
 // Measure the flow sensors (callback function for the timer)
 void measure_sensors() {
-	if (print_to_serial) {
-		Serial.print(F("Measure count: ")); Serial.print(measure_count); Serial.print(F(",     "));
-		measure_count++;
+	// -------------------------- INLET FLOW SENSORS FROM THE DRIVER --------------------------
+	// Pulse the trigger pin to the driver to measure the flow sensors and send the struct
+	digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, HIGH);
+	digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, LOW);
+	// Wait for the data from the driver
+	while (!ETin.receiveData()) {
+		delay(1);
 	}
+	// Save the data from the driver
+	inlet_flow_sensor_ml_min = driver_to_monitor_data.inlet_flow_sensor_ml_min;
+	outlet_flow_sensor_ml_min = driver_to_monitor_data.outlet_flow_sensor_ml_min;
 	
-	// --------------------------------- FLOW SENSORS ---------------------------------
-	inlet_sensor.measure_flow();
-	//outlet_sensor.measure_flow();
-	inlet_flow_sensor_ml_min = inlet_sensor.scaled_flow_value;
-	//outlet_flow_sensor_ml_min = outlet_sensor.scaled_flow_value;
-
-	// Print the flow rate and temp to the serial monitor
-	if (print_to_serial) {
-		temp = inlet_sensor.get_name() + ": " + String(inlet_sensor.scaled_flow_value) + " " + String(UNIT_FLOW);
-		Serial.print(temp); Serial.print(",     ");
-		//temp = outlet_sensor.get_name() + ": " + String(outlet_sensor.scaled_flow_value) + " " + String(UNIT_FLOW);
-		Serial.print(temp); Serial.print(",     ");
-	}
-
-    // --------------------------------- HEATER BLOCK THERMISTORS ---------------------------------
-	// Read all of the thermistors
-
-
 }
 
 // -------------------------------- DATA LOGGER FUNCTIONS --------------------------------
@@ -204,7 +183,6 @@ void get_status(void) {
 	Serial.printf("Max Collection delay: %lu microseconds\n", tsp->maxcdelay);
 	Serial.printf("Average Write Time: %6.3f milliseconds\n", tsp->avgwritetime / 1000.0);
 	Serial.printf("Maximum Write Time: %6.3f milliseconds\n\n", tsp->maxwritetime / 1000.0);
-
 }
 
 // Callback function called from the datalogger time handler
@@ -297,6 +275,11 @@ void update_screen() {
 
 // -------------------------------- SETUP --------------------------------
 void setup() {
+	// Initialise the EasyTransfer objects
+	//ETin_mega.begin(details(mega_data), &TO_MEGA_SERIAL);
+	ETout.begin(details(monitor_to_driver_data), &Serial8);
+	ETin.begin(details(driver_to_monitor_data), &Serial8);
+
 	// Initialize the serial communication
     Serial.begin(SERIAL_BAUD);
 	if (wait_for_serial) {while (!Serial) {};};			// wait for serial port to connect. Needed for native USB port only
@@ -331,17 +314,8 @@ void setup() {
 	data_logger.AttachDisplay(&my_binary_display, 5000);		// display written data once per 5 seconds
 	data_logger.AttachPlayback(&my_verify);						// check for missing records
 
-	// --------------------------- FLOW SENSOR AND THERMOCOUPLE SETUP ---------------------------
+	// --------------------------- THERMOCOUPLE SETUP ---------------------------
 	thermocouple.begin();						// on SPI bus
-	//inlet_sensor.get_bus()->timeout_millis = 1000;			// set timeout to 1s
-
-	inlet_sensor.begin();
-	//outlet_sensor.begin();
-	inlet_sensor.soft_reset();		
-	//outlet_sensor.soft_reset();
-	inlet_sensor.set_continuous_mode();
-	//outlet_sensor.set_continuous_mode();
-	
 	
 	// --------------------------- SIMPLE_GFX TFT DISPLAY SETUP ---------------------------
 	sim_gfx.init();
@@ -370,6 +344,7 @@ void setup() {
 	pinMode(HEATER_BLOCK_RELAY_CONTROL_PIN, OUTPUT);
 	pinMode(ROPE_HEATER_RELAY_CONTROL_PIN, OUTPUT);
 	pinMode(STATUS_PIN, OUTPUT);
+	pinMode(MEGA_MEASURE_FLOW_TRIGGER_PIN, OUTPUT);
     pinMode(THERMISTOR_1_INPUT_PIN, INPUT);
     pinMode(THERMISTOR_2_INPUT_PIN, INPUT);
     pinMode(THERMISTOR_3_INPUT_PIN, INPUT);
@@ -382,6 +357,8 @@ void setup() {
     pinMode(THERMISTOR_10_INPUT_PIN, INPUT);
     pinMode(THERMISTOR_11_INPUT_PIN, INPUT);
     pinMode(THERMISTOR_12_INPUT_PIN, INPUT);
+	pinMode(THERMISTOR_13_INPUT_PIN, INPUT);
+	pinMode(THERMISTOR_14_INPUT_PIN, INPUT);
 
 	// --------------------------- TIMER OBJECT SETUP ---------------------------
 	statusLEDTimer.setInterval(blink_delay_ms, -1);
@@ -416,12 +393,14 @@ void loop() {
 	// --------------------------- Update the timer objects ---------------------------
 	statusLEDTimer.update();
 	measureSensorsAndUpdateOutputTimer.update();
-	//updateScreenTimer.update();
+	updateScreenTimer.update();
 
 
-	// --------------------------- Update the EasyTransfer objects ---------------------------
-
-
+	// --------------------------- Update the EasyTransfer OUT ---------------------------
+	if (new_piezo_data){
+		ETout.sendData();
+		new_piezo_data = false;
+	}
 
 	// --------------------------- Update the data logger ---------------------------
 	TLoggerStat *tsp;

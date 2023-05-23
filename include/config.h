@@ -1,5 +1,5 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef _CONFIG_H
+#define _CONFIG_H
 
 #pragma once
 #include <Arduino.h> 
@@ -100,6 +100,8 @@ float min_heat_flux = 0.0;         // W/m^2
 // Data recording variables
 bool start_stop_recording = false;      // Start/stop recording data (shared between the mega and the monitor, set by start/stop button)
 
+// New data
+bool new_piezo_data = false;            // Flag for new piezo data
 
 // -----------------------------------------------------------------------------
 // Piezo variables
@@ -118,8 +120,8 @@ bool piezo_2_enable = false;            // Enable/disable piezo 2
 // Thermistor variables
 // -----------------------------------------------------------------------------
 const uint16_t analog_mega_max = 1024;              // Max analog resolution for the mega, 10 bits
-const uint16_t thermistor_upper_R1 = 10000;         // ohms
-const uint16_t thermistor_lower_R1 = 10000;         // ohms
+const uint16_t thermistor_upper_R1 = 10000;         // ohms for the series resistor for the upper level thermistors
+const uint16_t thermistor_lower_R1 = 10000;         // ohms for the series resistor for the lower level thermistors
 float thermistor_1_temp = 0.0;                      // Temperature of thermistor 1 in deg C, upper R1
 float thermistor_2_temp = 0.0;                      // Temperature of thermistor 2 in deg C, upper R1
 float thermistor_3_temp = 0.0;                      // Temperature of thermistor 3 in deg C, upper R1
