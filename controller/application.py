@@ -388,25 +388,41 @@ class MainWindow(QMainWindow):
         self.heat_flux_slider.valueChanged.connect(self.update_heat_flux_slider_label)
         
         # Connect the signals for the piezo 1 enable button
+        self.piezo_1_enable_button.clicked.connect(self.enable_piezo_1)
+
+        # Connect the signals for the piezo 2 enable button
+        self.piezo_2_enable_button.clicked.connect(self.enable_piezo_2)
         
-        # Create timer for the animation widget
-        self.mesh_animation_timer = QTimer(self)
-        self.current_frame_number = 0       # Start the count at 1
-        self.start_of_animation = True
-        self.mesh_animation_timer.timeout.connect(self.update_mesh_animation)
-        self.mesh_timer_interval = self.mesh_frame_generator.animation_length_ms/self.mesh_frame_generator.animation_steps
-        self.mesh_animation_timer.start(self.mesh_timer_interval)
+        # Connect the signals for the rope heater enable button
+        self.rope_enable_button.clicked.connect(self.enable_rope_heater)
+
+        # Connect the signals for the heater block enable button
+        self.heater_block_enable_button.clicked.connect(self.enable_heater_block)
+        
+        # Connect the signals for the send data button
+        self.send_data_button.clicked.connect(self.send_data)
+        
+        # Connect the signals for the emergency stop button
+        self.emergency_stop_button.clicked.connect(self.emergency_stop)
+        
+        # # Create timer for the animation widget
+        # self.mesh_animation_timer = QTimer(self)
+        # self.current_frame_number = 0       # Start the count at 1
+        # self.start_of_animation = True
+        # self.mesh_animation_timer.timeout.connect(self.update_mesh_animation)
+        # self.mesh_timer_interval = self.mesh_frame_generator.animation_length_ms/self.mesh_frame_generator.animation_steps
+        # self.mesh_animation_timer.start(self.mesh_timer_interval)
            
-        # Populate the matplotlib plots
-        self.update_point_plot()
-        self.update_avg_point_plot()
-        self.update_freq_slider_label(self.freq_slider.value())
-        self.update_point_slider_label(self.point_slider.point_number)
-        self.stop_timer()
-        self.regenerate_mesh_and_point_frames()
-        self.update_color_bar()
-        self.start_timer()
-        self.ready_to_record = True
+        # # Populate the matplotlib plots
+        # self.update_point_plot()
+        # self.update_avg_point_plot()
+        # self.update_freq_slider_label(self.freq_slider.value())
+        # self.update_point_slider_label(self.point_slider.point_number)
+        # self.stop_timer()
+        # self.regenerate_mesh_and_point_frames()
+        # self.update_color_bar()
+        # self.start_timer()
+        # self.ready_to_record = True
         
         
         
@@ -485,6 +501,18 @@ class MainWindow(QMainWindow):
         
         self.emergency_stop_button.setText("Emergency Stop")
         self.emergency_stop_button.setEnabled(True)
+        
+    def enable_piezo_1(self):
+        if self.piezo_1_enable_button.isChecked():
+            print("Piezo 1 enabled")
+        else:
+            print("Piezo 1 disabled")
+            
+    def enable_piezo_2(self):
+        if self.piezo_2_enable_button.isChecked():
+            print("Piezo 2 enabled")
+        else:
+            print("Piezo 2 disabled")
         
     def enable_rope_heater(self):
         if self.rope_enable_button.isChecked():
