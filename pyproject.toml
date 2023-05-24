@@ -25,6 +25,7 @@ pyautogui = "^0.9.53"
 pygetwindow = "^0.0.9"
 mat73 = "^0.60"
 sympy = "^1.12"
+colorlog = "^6.7.0"
 
 
 [build-system]

@@ -1,0 +1,25 @@
+[23/May/2023 23:55:27] INFO [main.py:__init__:18] Starting HX2.5 PC Controller
+[23/May/2023 23:55:27] INFO [application.py:__init__:141] Initializing application window
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:169] Creating piezo 1 elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:216] Creating piezo 2 elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:262] Creating rope heater elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:284] Creating heater block elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:306] Creating plot animation elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:326] Creating other elements
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:361] Creating layouts
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:370] Adding widgets to left layout
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:394] Adding widgets to middle layout
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:399] Adding widgets to right layout
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:410] Aligning layouts
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:425] Creating widgets for vertical layouts
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:436] Creating main widget (application window)
+[23/May/2023 23:55:27] DEBUG [application.py:__init__:446] Connecting signals to callback functions
+[23/May/2023 23:55:27] DEBUG [application.py:init_update_all_slider_elements:506] Updating all slider elements to initial values for label updates
+[23/May/2023 23:55:28] INFO [application.py:enable_piezo_1:617] Piezo 1 enabled
+[23/May/2023 23:55:30] INFO [application.py:enable_piezo_1:619] Piezo 1 disabled
+[23/May/2023 23:55:31] INFO [application.py:enable_piezo_2:623] Piezo 2 enabled
+[23/May/2023 23:55:32] INFO [application.py:enable_piezo_2:625] Piezo 2 disabled
+[23/May/2023 23:55:33] INFO [application.py:enable_rope_heater:629] Rope heater enabled
+[23/May/2023 23:55:35] INFO [application.py:enable_heater_block:635] Heater block enabled
+[23/May/2023 23:55:36] INFO [application.py:enable_heater_block:637] Heater block disabled
+[23/May/2023 23:55:36] INFO [application.py:enable_rope_heater:631] Rope heater disabled

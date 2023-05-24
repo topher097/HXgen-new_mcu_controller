@@ -15,11 +15,12 @@ class HXController:
     def __init__(self, log_dir: str) -> None:
         # Init the logging
         self.log = logger.HXLogger(log_dir).log
+        self.log.info("Starting HX2.5 PC Controller")
         
         # Init the application
         self.app = QApplication(sys.argv)
         window_title = "HX2.5 PC Controller"
-        self.view = MainWindow(window_title=window_title)
+        self.view = MainWindow(window_title=window_title, log=self.log)
 
 
 if __name__ == "__main__":

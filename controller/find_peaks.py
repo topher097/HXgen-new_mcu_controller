@@ -2,8 +2,6 @@ import numpy as np
 import peakutils
 from scipy import signal
 
-from data_classes import Vibrometer, Point
-from extract import get_point_object
 
 """Downsample the data"""
 def downsample(x: np.ndarray, factor: int) -> np.ndarray:
@@ -25,9 +23,8 @@ def peak_coherence_threshold(peak_indexes: np.ndarray, coh_data: np.ndarray, thr
 
 """Find the peaks in the PSD and FRF data"""
 class FindPeaks:
-    def __init__(self, vibrometer: Vibrometer) -> None:
-        self.vibrometer = vibrometer
-        self.num_freqs = vibrometer.freq.size
+    def __init__(self) -> None:
+
         
         # Setup variables
         self.downsample_factor = 4                  # Factor to downsample the dataset by
@@ -38,21 +35,21 @@ class FindPeaks:
         point_nums = self.vibrometer.measured_points
         updated_points = list()
         for i in point_nums:
-            point = get_point_object(self.vibrometer.points, i)
+            pass
             #print(f"Finding peaks for point {i}/{len(point_nums)}")
-            updated_points.append(self.find_peaks(point))
-        self.vibrometer.points = updated_points
+            #updated_points.append(self.find_peaks(point))
+        #self.vibrometer.points = updated_points
             
         # Find the peaks for average point
-        self.vibrometer.avg_point = self.find_peaks(self.vibrometer.avg_point)
+        #self.vibrometer.avg_point = self.find_peaks(self.vibrometer.avg_point)
         
     """Find the peaks of the data sets (PSD and FRF)"""
-    def find_peaks(self, point: Point) -> Point:
+    def find_peaks(self) -> None:
         # Grab the data from the point object
-        freq = self.vibrometer.freq
-        psd = point.psd.data_db
-        frf = point.frf.data_db
-        coh = point.coherence.data
+        # freq = self.vibrometer.freq
+        # psd = point.psd.data_db
+        # frf = point.frf.data_db
+        # coh = point.coherence.data
         
         # Downsample the frequencies, PSD, and FRF data        
         freq = downsample(freq, self.downsample_factor)
@@ -79,10 +76,10 @@ class FindPeaks:
         # Create the Peaks object
         psd_peaks = np.column_stack((psd_peak_freqs, psd_peak_values))
         frf_peaks = np.column_stack((frf_peak_freqs, frf_peak_values))
-        point.psd_peaks = psd_peaks
-        point.frf_peaks = frf_peaks
+        #point.psd_peaks = psd_peaks
+        #point.frf_peaks = frf_peaks
         #print(frf_peaks[:, 0])
         #print(frf_peaks[:, 1])
-        return point
+        #eturn point
 
         

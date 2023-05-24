@@ -1,0 +1,19 @@
+[24/May/2023 01:16:03] INFO [main.py:__init__:18] Starting HX2.5 PC Controller
+[24/May/2023 01:16:03] INFO [application.py:__init__:141] Initializing application window
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:201] Creating piezo 1 elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:258] Creating piezo 2 elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:307] Creating rope heater elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:330] Creating heater block elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:353] Creating plot animation elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:373] Creating other elements
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:408] Creating layouts
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:417] Adding widgets to left layout
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:442] Adding widgets to middle layout
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:447] Adding widgets to right layout
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:458] Aligning layouts
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:479] Creating widgets for vertical layouts
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:490] Creating main widget (application window)
+[24/May/2023 01:16:03] DEBUG [application.py:__init__:500] Connecting signals to callback functions
+[24/May/2023 01:16:03] DEBUG [application.py:init_update_all_slider_elements:560] Updating all slider elements to initial values for label updates
+[24/May/2023 01:16:12] INFO [application.py:enable_heater_block:689] Heater block enabled
+[24/May/2023 01:16:13] INFO [application.py:enable_heater_block:691] Heater block disabled

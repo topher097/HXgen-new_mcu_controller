@@ -1,0 +1,3 @@
+[24/May/2023 00:51:12] INFO [main.py:__init__:18] Starting HX2.5 PC Controller
+[24/May/2023 00:51:12] INFO [application.py:__init__:141] Initializing application window
+[24/May/2023 00:51:12] DEBUG [application.py:__init__:181] Creating piezo 1 elements

@@ -1,0 +1,25 @@
+QPushButton { 
+    font-size: 18px;
+    font-weight: bold;
+    color: black;
+    background-color: light grey; 
+    border-width: 2px; 
+    border-radius: 10px; 
+    border-color: dark grey; 
+    border-style: outset;
+    padding: 20px; }
+
+QPushButton:checked { 
+    background-color: green; 
+    border-style: inset; 
+}
+    
+QWidget {
+    background-color: light grey;
+    border-width: 10px;
+    border-radius: 5px;
+    border-color: black;
+    border-style: outset;
+    padding: 10px;
+}
+

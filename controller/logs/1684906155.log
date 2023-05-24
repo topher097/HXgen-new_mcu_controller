@@ -1,0 +1,13 @@
+[24/May/2023 01:29:15] INFO [main.py:__init__:18] Starting HX2.5 PC Controller
+[24/May/2023 01:29:15] INFO [application.py:__init__:149] Initializing application window
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:209] Creating piezo 1 elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:256] Creating piezo 2 elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:296] Creating rope heater elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:316] Creating heater block elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:336] Creating plot animation elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:356] Creating other elements
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:388] Creating layouts
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:397] Adding widgets to left layout
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:422] Adding widgets to middle layout
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:427] Adding widgets to right layout
+[24/May/2023 01:29:15] DEBUG [application.py:__init__:438] Aligning layouts
