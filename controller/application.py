@@ -4,7 +4,7 @@
 """PySide6 port of the qt3d/simple-cpp example from Qt v5.x"""
 from logging import Logger
 from math import pi
-from turtle import left
+from turtle import left, up
 import matplotlib
 matplotlib.use('Qt5Agg')
 
@@ -13,10 +13,10 @@ from enum import IntEnum, auto
 from dataclasses import dataclass
 from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal, QEasingCurve, QSize, Qt, QTimer, Slot, QRect, QSize)
 from PySide6.QtGui import (QMatrix4x4, QQuaternion, QVector3D, QWindow, QFont)
-from PySide6.QtWidgets import (QMainWindow, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QLayout, QLayoutItem, QTextBrowser, QWidgetItem)
-from PySide6.Qt3DCore import (Qt3DCore)
-from PySide6.Qt3DExtras import (Qt3DExtras)
+from PySide6.QtWidgets import (QMainWindow, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QTextEdit, QLayout, QLayoutItem, QTextBrowser, QWidgetItem)
 
+# Import custom Qt elements
+from application_elements import CentralWidget, MplCanvas, ListSlider, QLoggerStream
 
 # Need to import these after PySide6 for some reason
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
@@ -26,7 +26,7 @@ from matplotlib.offsetbox import AnchoredText
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from borderlayout import *
+# Other imports
 import numpy as np
 from time import time
 import open3d as o3d
@@ -37,12 +37,20 @@ import os
 from multiprocessing import Process
 from threading import Thread
 
+# Custom script imports
+from borderlayout import *
+import data_transfer
+from serial_interface import SerialInterface
+
+
 # from utils import get_nearest_freq_index, get_point_object
 
 THEMES = ["Qt", "Primary Colors", "Digia", "Stone Moss", "Army Blue", "Retro",
           "Ebony", "Isabelle"]
 
 viridis = mpl.colormaps['viridis'].resampled(8)
+
+
 
 
 
@@ -87,71 +95,26 @@ heat_block_enable = False
 # -------------------- GUI attributes --------------------
 min_width_slider = 30
 
-"""Class to encapsulate slider and label"""
-class CentralWidget(QWidget):
-    def __init__(self, *args):
-        super(CentralWidget, self).__init__(*args)
 
-
-"""Class to create a Matplotlib figure widget for plotting 2d plots in Qt6"""
-class MplCanvas(FigureCanvasQTAgg):
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
-        mpl.rcParams['toolbar'] = 'None'
-        fig = Figure(figsize=(width, height), dpi=dpi)
-        self.axes = fig.add_subplot(111)
-        super(MplCanvas, self).__init__(fig)
-    
-"""List of values for slider class"""
-class ListSlider(QSlider):
-    elementChanged = Signal(int)
-
-    def __init__(self, values: list[int], *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setMinimum(0)
-        self._values = []       # list of index range of values
-        self.valueChanged.connect(self._on_value_changed)
-        self.values = values
-
-    """Return the slider values when calling slider.values()"""
-    @property
-    def values(self):
-        return self._values
-
-    """When calling slider.point_number, return the value from the list of slider values"""
-    @property
-    def point_number(self):
-        return self.values[self.sliderPosition()]
-
-    """Set the values of the slider"""
-    @values.setter
-    def values(self, values: list[int]):
-        self._values = values
-        # minimum = 1
-        maximum = max(0, len(self._values))
-        #print(f"max: {maximum}")
-        self.setMaximum(maximum)
-        self.setValue(0)
-    
-    @Slot(int)
-    def _on_value_changed(self, index):
-        slider_value = self.values[index]
-        #print(f"point slider value: {slider_value}, index: {index}")
-        self.elementChanged.emit(slider_value)
         
     
     
 """Create the main window for the application"""
 class MainWindow(QMainWindow):
-    def __init__(self, window_title: str, log: Logger, *args, **kwargs):
-        print("Initializing application window")
+    def __init__(self, window_title: str, log: Logger, serial_interface: SerialInterface, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.log = log
+        self.serial_inteface = serial_interface
+        self.log = log      # Get the logger from the main application
         
+        self.input_data = data_transfer.IOData(5000)
+        self.output_data = data_transfer.IOData(1)
+ 
+        # Initialize the main window
         self.log.info("Initializing application window")
         self.setWindowTitle(window_title)
         self.window_title = window_title
-        self.setMinimumWidth(2000)
-        self.setMinimumHeight(900)
+        self.setMinimumWidth(1800)
+        self.setMinimumHeight(1000)
         label_font = QFont()
         label_font.setBold(True)
         label_font.setPointSize(16)
@@ -162,40 +125,52 @@ class MainWindow(QMainWindow):
         button_size_policy.setHeightForWidth(True)
         
         # Button stype
-        button_style =   """QPushButton { 
+        button_style =  """
+                            QPushButton { 
                                 font-size: 18px;
                                 font-weight: bold;
                                 color: black;
-                                background-color: light grey; 
+                                background-color: red; 
                                 border-width: 2px; 
                                 border-radius: 10px; 
                                 border-color: dark grey; 
                                 border-style: outset;
                                 padding: 20px; 
                             }
+                            QPushButton:pressed {
+                                background-color: red;
+                            }
+                            QPushButton:clicked {
+                                background-color: red;
+                            }
                             QPushButton:checked { 
                                 background-color: green; 
                                 border-style: inset; 
-                            }""" 
+                            }
+                        """ 
                                 
         # Widget border style
-        widget_border_style = """QLayoutItem {
+        widget_border_style =   """
+                                QLayoutItem {
                                     background-color: light grey;
                                     border-width: 2px;
                                     border-radius: 5px;
                                     border-color: black;
                                     border-style: outset;
                                     padding: 10px; 
-                                }"""
+                                }
+                                """
   
         # Slider style                   
-        slider_style =   """QSlider::handle:horizontal {
+        slider_style =      """
+                            QSlider::handle:horizontal {
                                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #b4b4b4, stop:1 #8f8f8f);
                                 border: 1px solid #5c5c5c;
                                 width: 18px;
                                 margin: -2px 0; /* handle is placed by default on the contents rect of the groove. Expand outside the groove */
                                 border-radius: 3px;
-                            }"""
+                            }
+                            """
                                     
         # style_file ="style.css"
         # self.styles = None
@@ -204,7 +179,19 @@ class MainWindow(QMainWindow):
         #     print("reading css")
         #     print(self.styles)
         # print(self.styles[0])
-                                    
+        
+        # -------------------------------- LOGGER ELEMENT --------------------------------
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        handler = QLoggerStream(self.log_widget)
+        handler.setFormatter(self.log.handlers[1].formatter)        # Use the same formatter as the console handler
+        self.log.addHandler(handler)   
+        self.log_widget.setStyleSheet("""background-color: light grey;; 
+                                      font-size: 12px; 
+                                      border-width: 2px;
+                                      border-radius: 5px;
+                                      border-color: black;
+                                      font-family: Courier;""")    
                             
         
         # -------------------------------- PIEZO 1 ELEMENTS --------------------------------
@@ -221,7 +208,7 @@ class MainWindow(QMainWindow):
         piezo_1_freq_layout.addWidget(self.piezo_1_freq_slider_label)
         piezo_1_freq_layout.addWidget(self.piezo_1_freq_slider)
         piezo_1_freq_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        piezo_1_freq_layout.setStretch(0, 0)
+        #piezo_1_freq_layout.setStretch(0, 0)
         self.piezo_1_freq_widget = CentralWidget()
         self.piezo_1_freq_widget.setLayout(piezo_1_freq_layout)
         
@@ -238,7 +225,7 @@ class MainWindow(QMainWindow):
         piezo_1_amp_layout.addWidget(self.piezo_1_amp_slider_label)
         piezo_1_amp_layout.addWidget(self.piezo_1_amp_slider)
         piezo_1_amp_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        piezo_1_amp_layout.setStretch(0, 0)
+        #piezo_1_amp_layout.setStretch(0, 0)
         self.piezo_1_amp_widget = CentralWidget()
         self.piezo_1_amp_widget.setLayout(piezo_1_amp_layout)
                 
@@ -254,12 +241,12 @@ class MainWindow(QMainWindow):
         piezo_1_phase_layout.addWidget(self.piezo_1_phase_slider_label)
         piezo_1_phase_layout.addWidget(self.piezo_1_phase_slider)
         piezo_1_phase_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        piezo_1_phase_layout.setStretch(0, 0)
+        #piezo_1_phase_layout.setStretch(0, 0)
         self.piezo_1_phase_widget = CentralWidget()
         self.piezo_1_phase_widget.setLayout(piezo_1_phase_layout)
         
         # Create a button for enabling the piezo 1
-        self.piezo_1_enable_button = QPushButton("Enable", self)
+        self.piezo_1_enable_button = QPushButton("Enable Piezo 1", self)
         self.piezo_1_enable_button.setCheckable(True)
         self.piezo_1_enable_button.setChecked(piezo_1_enable)
         self.piezo_1_enable_button.setEnabled(True)
@@ -318,7 +305,7 @@ class MainWindow(QMainWindow):
         self.piezo_2_phase_widget.setLayout(piezo_2_phase_layout)
         
         # Create a button for enabling the piezo 2
-        self.piezo_2_enable_button = QPushButton("Enable Rope Heater", self)
+        self.piezo_2_enable_button = QPushButton("Enable Piezo 2", self)
         self.piezo_2_enable_button.setCheckable(True)
         self.piezo_2_enable_button.setChecked(piezo_2_enable)
         self.piezo_2_enable_button.setEnabled(True)
@@ -401,7 +388,7 @@ class MainWindow(QMainWindow):
         self.log.debug("Creating other elements")
         # Creata a button to send the data to the Teensy
         self.send_data_button = QPushButton("Send Data", self)
-        self.send_data_button.setEnabled(False)
+        self.send_data_button.setEnabled(True)
         self.send_data_button.setChecked(False)
         self.send_data_button.setCheckable(True)
         self.send_data_button.setSizePolicy(button_size_policy)
@@ -426,7 +413,7 @@ class MainWindow(QMainWindow):
         
         # Craete an emergency stop button for the heaters and stop the recording on teensy
         self.emergency_stop_button = QPushButton("Emergency Stop", self)
-        self.emergency_stop_button.setEnabled(False)
+        self.emergency_stop_button.setEnabled(True)
         self.emergency_stop_button.setCheckable(True)    
         self.emergency_stop_button.setChecked(False)   
         self.emergency_stop_button.setSizePolicy(button_size_policy) 
@@ -447,14 +434,6 @@ class MainWindow(QMainWindow):
 
         # Add widgets to left layout
         self.log.debug("Adding widgets to left layout")
-        # left_layout.addWidget(self.piezo_1_freq_slider_label)       # Add label to the piezo 1 frequency slider
-        # left_layout.addWidget(self.piezo_1_freq_slider)             # Add the piezo 1 frequency slider to the left layout
-        # left_layout.addWidget(self.piezo_1_freq_widget)
-        # left_layout.addWidget(self.piezo_1_amp_slider_label)        # Add label to the piezo 1 amplitude slider
-        # left_layout.addWidget(self.piezo_1_amp_slider)              # Add the piezo 1 amplitude slider to the left layout
-        # left_layout.addWidget(self.piezo_1_phase_slider_label)      # Add label to the piezo 1 phase slider
-        # left_layout.addWidget(self.piezo_1_phase_slider)            # Add the piezo 1 phase slider to the left layout
-        # left_layout.addWidget(self.piezo_1_enable_button)           # Add the piezo 1 enable button to the left layout
         left_layout.addWidget(self.piezo_1_freq_widget)
         left_layout.addWidget(self.piezo_1_amp_widget)
         left_layout.addWidget(self.piezo_1_phase_widget)
@@ -464,22 +443,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.piezo_2_phase_widget)
         left_layout.addWidget(self.piezo_2_enable_button)
         left_layout.addWidget(self.rope_temp_widget)
-        left_layout.addWidget(self.heater_block_temp_widget)
         
-        # left_layout.addWidget(self.piezo_2_freq_slider_label)       # Add label to the piezo 2 frequency slider
-        # left_layout.addWidget(self.piezo_2_freq_slider)             # Add the piezo 2 frequency slider to the left layout
-        # left_layout.addWidget(self.piezo_2_amp_slider_label)        # Add label to the piezo 2 amplitude slider
-        # left_layout.addWidget(self.piezo_2_amp_slider)              # Add the piezo 2 amplitude slider to the left layout
-        # left_layout.addWidget(self.piezo_2_phase_slider_label)      # Add label to the piezo 2 phase slider
-        # left_layout.addWidget(self.piezo_2_phase_slider)            # Add the piezo 2 phase slider to the left layout
-        # left_layout.addWidget(self.piezo_2_enable_button)           # Add the piezo 2 enable button to the left layout
-        
-        # left_layout.addWidget(self.rope_temp_slider_label)          # Add label to the rope heater temperature slider
-        # left_layout.addWidget(self.rope_temp_slider)                # Add the rope heater temperature slider to the left layout
-        
-        # left_layout.addWidget(self.heat_flux_slider_label)          # Add label to the heater block heat flux slider
-        # left_layout.addWidget(self.heat_flux_slider)                # Add the heater block heat flux slider to the left layout
-        
+
         # Add widgets to middle layout
         self.log.debug("Adding widgets to middle layout")
         middle_layout.addWidget(self.thermistor_plot_widget, 2)     # Add the thermistor plot widget to the right layout
@@ -488,8 +453,7 @@ class MainWindow(QMainWindow):
         # Add widgets to right layout
         self.log.debug("Adding widgets to right layout")
         right_layout.addWidget(self.send_data_button)               # Add the send data button to the right layout
-        right_layout.addWidget(self.heater_block_temp_guage_label)  # Add label to the heater block temperature guage
-        right_layout.addWidget(self.heater_block_temp_guage)        # Add the heater block temperature guage to the right layout
+        right_layout.addWidget(self.heater_block_temp_widget)       # Add the heater block temperature widget to the right layout
         right_layout.addWidget(self.heater_block_enable_button)     # Add the heater block enable button to the right layout
         right_layout.addWidget(self.rope_enable_button)             # Add the rope heater enable button to the right layout
         right_layout.addWidget(self.emergency_stop_button)          # Add the emergency stop button to the right layout
@@ -508,20 +472,20 @@ class MainWindow(QMainWindow):
                     subitem = item.widget().layout().itemAt(j)
                     # Format the QLabel
                     if isinstance(subitem.widget(), QLabel):
-                        print("Found a QLabel inside a CentralWidget()")
+                        #print("Found a QLabel inside a CentralWidget()")
                         subitem.widget().setFont(label_font)
                         subitem.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
                         subitem.widget().setMinimumWidth(min_width_slider)
                     # Format the QSliders
                     elif isinstance(subitem.widget(), QSlider):
-                        print("Found a QSlider inside a CentralWidget()")
+                        #print("Found a QSlider inside a CentralWidget()")
                         subitem.widget().setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                         subitem.widget().setStyleSheet(slider_style) 
-                item.widget().setStyleSheet(widget_border_style) 
+                #item.widget().setStyleSheet(widget_border_style) 
             # Format the QPushButtons in the left layout
-            if isinstance(left_layout.itemAt(i).widget(), QPushButton):
+            elif isinstance(left_layout.itemAt(i).widget(), QPushButton):
                 left_layout.itemAt(i).widget().setStyleSheet(button_style)
-            left_layout.setStretch(i, 1)                               # Set the stretch of each slider in the left layout to 1
+            left_layout.setStretch(i, 2)                               # Set the stretch of each slider in the left layout to 1
         middle_layout.setAlignment(Qt.AlignCenter)                     # Align the middle layout to the top of the window
         middle_layout.setStretch(0, 1)                                 # Set the stretch of the thermistor plot to 1
         middle_layout.setStretch(1, 1)                                 # Set the stretch of the flow sensor plot to 1
@@ -552,7 +516,19 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(right_widget)               
         main_widget = QWidget()
         main_widget.setLayout(main_layout)
-        self.setCentralWidget(main_widget)
+        
+        # Create main window layout
+        window_layout = QVBoxLayout()
+        main_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        window_layout.addWidget(main_widget)
+        window_layout.setStretchFactor(main_widget, 8)  # 80% of the window veritcal space is the main widget
+        self.log_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        window_layout.addWidget(self.log_widget)
+        window_layout.setStretchFactor(self.log_widget, 2)  # 10% of the window veritcal space is the log widget
+        self.window_widget = QWidget()
+        self.window_widget.setLayout(window_layout)
+        
+        self.setCentralWidget(self.window_widget)
         
     
         # -------------------------------- CALLBACK FOR ELEMENTS --------------------------------
@@ -631,6 +607,36 @@ class MainWindow(QMainWindow):
         self.update_heater_block_temp_guage_label(self.heater_block_temp_guage.value())
     
         
+    def update_elements_from_teensy_input_data(self):
+        """Updates the GUI elements from the latest Teensy input data, not necessarily when Teensy data is received and stored"""
+        self.log.debug("Updating GUI elements from latest Teensy input data")
+        last_io_count = self.input_data.io_count
+        
+        self.update_piezo_1_freq_slider_value(self.input_data.piezo_1_freq_hz[last_io_count])
+        self.update_piezo_1_amp_slider_value(self.input_data.piezo_1_amp_v[last_io_count])
+        self.update_piezo_1_phase_slider_value(self.input_data.piezo_1_phase_deg[last_io_count])
+        
+        self.update_piezo_2_freq_slider_value(self.input_data.piezo_2_freq_hz[last_io_count])
+        self.update_piezo_2_amp_slider_value(self.input_data.piezo_2_amp_v[last_io_count])
+        self.update_piezo_2_phase_slider_value(self.input_data.piezo_2_phase_deg[last_io_count])
+        
+        self.update_rope_temp_slider_value(self.input_data.inlet_fluid_temp_c[last_io_count])
+        self.update_heat_flux_slider_value(self.input_data.heat_flux_w_per_m2[last_io_count])
+        
+        self.update_heater_block_temp_guage_value(self.input_data.heat_block_temp_c[last_io_count])
+        
+        self.update_piezo_1_enable_button(self.input_data.piezo_1_enabled[last_io_count])
+        self.update_piezo_2_enable_button(self.input_data.piezo_2_enabled[last_io_count])
+        self.update_rope_enable_button(self.input_data.rope_heater_enable[last_io_count])
+        self.update_heater_block_enable_button(self.input_data.heater_block_enable[last_io_count])
+        
+        #self.update_send_data_button(self.teensy_input_data.send_data)
+        #self.update_emergency_stop_button(self.teensy_input_data.emergency_stop)    
+        
+    def update_plots_from_teensy_input_data(self):
+        """Updates the plots from the latest Teensy input data, not necessarily when Teensy data is received and stored"""
+        pass
+        
     """ Update the element labels """
     def update_piezo_1_freq_slider_label(self, value):
         self.piezo_1_freq_slider_label.setText(f"Frequency: {value} (Hz)")
@@ -701,9 +707,34 @@ class MainWindow(QMainWindow):
         self.heat_flux_slider.setValue(value)   
         #self.log.info(f"Heat flux slider update, heat flux: {value} (W/m²)")
     
-    def update_heater_block_temp_guage(self, value):
+    def update_heater_block_temp_guage_value(self, value):
         self.heater_block_temp_guage.setValue(value)
         #self.log.info(f"Heater block temp guage update, temperature: {value} (°C)")
+        
+    """ Update button states """
+    def update_send_data_button(self, state):
+        self.send_data_button.setChecked(state)
+        #self.log.info(f"Send data button update, state: {state}")
+    
+    def update_emergency_stop_button(self, state):
+        self.emergency_stop_button.setChecked(state)
+        #self.log.info(f"Emergency stop button update, state: {state}")
+
+    def update_piezo_1_enable_button(self, state):
+        self.piezo_1_enable_button.setChecked(state)
+        #self.log.info(f"Piezo 1 enable button update, state: {state}")
+        
+    def update_piezo_2_enable_button(self, state):
+        self.piezo_2_enable_button.setChecked(state)
+        #self.log.info(f"Piezo 2 enable button update, state: {state}")
+        
+    def update_rope_enable_button(self, state):
+        self.rope_enable_button.setChecked(state)
+        #self.log.info(f"Rope temp enable button update, state: {state}")
+        
+    def update_heater_block_enable_button(self, state):
+        self.heater_block_enable_button.setChecked(state)
+        #self.log.info(f"Heat flux enable button update, state: {state}")
         
     """ Button callbacks """
     def send_data(self):
@@ -717,11 +748,11 @@ class MainWindow(QMainWindow):
         self.send_data_button.setEnabled(True)
         
     def emergency_stop(self):
+        self.disable_all_elements()
         self.emergency_stop_button.setEnabled(False)
         self.emergency_stop_button.setText("Stopping...")
         self.log.error("Emergency stop")
         ################# SEND THE DATA TO SERIAL CONNECTION #################
-        
         self.emergency_stop_button.setText("Emergency Stop")
         self.emergency_stop_button.setEnabled(True)
         
@@ -749,6 +780,22 @@ class MainWindow(QMainWindow):
         else:
             self.log.info("Heater block disabled")
 
+    def disable_all_elements(self):
+        """Disable all elements in the window, except the emergency stop button and the plots"""
+        for widget in self.window_widget.children():
+            if not isinstance(widget, MplCanvas):
+                try:
+                    widget.setEnabled(False)
+                except:
+                    pass
+        # Re-enable the emergency stop button
+        self.emergency_stop_button.setEnabled(True)
+            
+    def update_output_iodata_object(self):
+        """ Write the output iodata object to the output queue before sending to the serial connection """
+        self.output_data = data_transfer.IOData(1)      # Reset the output data object
+        self.output_data.piezo_1_freq_hz = np.uint32(self.piezo_1_freq_slider.value())
+        self.output_data.piezo_1_amp_v = np.uint32(self.piezo_1_amp_slider.value())
   
     """ Timer methods """      
     def stop_timer(self):

@@ -1,8 +1,0 @@
-[23/May/2023 23:34:41] INFO [main.py:__init__:18] Starting HX2.5 PC Controller
-[23/May/2023 23:34:41] INFO [application.py:__init__:141] Initializing application window
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:152] Creating piezo 1 elements
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:196] Creating piezo 2 elements
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:240] Creating rope heater elements
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:260] Creating heater block elements
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:280] Creating plot animation elements
-[23/May/2023 23:34:41] DEBUG [application.py:__init__:300] Creating other elements

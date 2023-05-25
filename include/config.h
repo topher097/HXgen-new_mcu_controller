@@ -26,8 +26,8 @@ const char UNIT_FLOW[] = " ml/min";                 // physical unit of the flow
 const char UNIT_TEMP[] = " deg C";                  // physical unit of the temperature measurement
 const int MEASUREMENT_MODE_B1 = 0x36;               // First byte of the measurement mode command, IPA calibration
 const int MEASUREMENT_MODE_B2 = 0x08;               // Second byte of the measurement mode command, IPA calibration
-volatile float inlet_flow_sensor_ml_min;            // mL/min from the inlet flow sensor
-volatile float outlet_flow_sensor_ml_min;           // mL/min from the outlet flow sensor
+float inlet_flow_sensor_ml_min;            // mL/min from the inlet flow sensor
+float outlet_flow_sensor_ml_min;           // mL/min from the outlet flow sensor
 
 // -----------------------------------------------------------------------------
 // Rope heater control specific settings, adjust if needed:
@@ -80,8 +80,9 @@ const int touch_pressure_min = 10;        // minimum touch pressure to register 
 
 // Serial communication settings
 bool print_to_serial = false;            // print to serial port
-const int SERIAL_BAUD = 9600;          // baud rate for serial communication
-bool wait_for_serial = true;            // wait for serial connection before starting program
+const int SERIAL_BAUD = 115200;          // baud rate for serial communication
+bool wait_for_serial = false;            // wait for serial connection before starting program
+uint16_t send_data_delay_ms = 1000;      // delay between sending data over serial port in ms
 
 // Analog (ADC) settings
 const int16_t analog_resolution = 12;                          // bits of resolution on ADC
@@ -120,8 +121,7 @@ bool piezo_2_enable = false;            // Enable/disable piezo 2
 // Thermistor variables
 // -----------------------------------------------------------------------------
 const uint16_t analog_mega_max = 1024;              // Max analog resolution for the mega, 10 bits
-const uint16_t thermistor_upper_R1 = 10000;         // ohms for the series resistor for the upper level thermistors
-const uint16_t thermistor_lower_R1 = 10000;         // ohms for the series resistor for the lower level thermistors
+const uint16_t thermistor_R1 = 5100;               // ohms for the series resistor for the thermistors
 float thermistor_1_temp = 0.0;                      // Temperature of thermistor 1 in deg C, upper R1
 float thermistor_2_temp = 0.0;                      // Temperature of thermistor 2 in deg C, upper R1
 float thermistor_3_temp = 0.0;                      // Temperature of thermistor 3 in deg C, upper R1

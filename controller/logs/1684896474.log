@@ -1,5 +1,0 @@
-[23/May/2023 22:47:54] INFO [logger.py:<module>:109] Test info message
-[23/May/2023 22:47:54] DEBUG [logger.py:<module>:110] Test debug message
-[23/May/2023 22:47:54] WARNING [logger.py:<module>:111] Test warning message
-[23/May/2023 22:47:54] ERROR [logger.py:<module>:112] Test error message
-[23/May/2023 22:47:54] CRITICAL [logger.py:<module>:113] Test critical message
