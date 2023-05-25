@@ -27,6 +27,8 @@ mat73 = "^0.60"
 sympy = "^1.12"
 colorlog = "^6.7.0"
 qasync = "^0.24.0"
+pySerialTransfer = { git = "https://github.com/topher097/async-pySerialTransfer.git", branch = "async" }
+serial = "^0.0.97"
 
 
 [build-system]

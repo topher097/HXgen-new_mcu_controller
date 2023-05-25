@@ -4,72 +4,100 @@ import serial_asyncio
 import logging
 import numpy as np
 from struct import pack
+from typing import Optional
+from io_dataclasses import IOData, IODataArrays
+from dataclasses import dataclass
 
-from data_transfer import IOData
+    
+START_BYTE = 0x7E
+STOP_BYTE  = 0x81
+
+MAX_PACKET_SIZE = 0xFE
+
+BYTE_FORMATS = {'native':          '@',
+                'native_standard': '=',
+                'little-endian':   '<',
+                'big-endian':      '>',
+                'network':         '!'}
 
 class SerialInterface(asyncio.Protocol):
     """Creates an asyncio serial connection to a COM port at a baud rate
 
     Args:
         log (logging.Logger): Logger object for logging events
+        com_port (str): COM port to connect to
+        baud_rate (int): Baud rate to connect at
+        struct_def (dict[str, np.dtype]): Dictionary of the data types to be sent and received. The key is the name of the data type and the value is the numpy dtype object
+        byte_order (str): Byte order to use when packing and unpacking data. Must be one of the following: 'native', 'native_standard', 'little-endian', 'big-endian', 'network'
     """
-    def __init__(self, log: logging.Logger) -> None:
-        self.transport = None
-        self.data_received_event = asyncio.Event()
-        self.buffer = bytearray()
-        self.log = log
-        self.input_data = IOData(5000)          # Read from this via the MainWindow callbacks for displaying to the user
-        self.output_data = IOData(1)            # Write to this via the MainWindow callbacks for sending to the MCU
-        self.buffer_size = self.input_data.buffer_size
-        self.start_buffering = False
+    
+    def __init__(self, log: logging.Logger, com_port: str, baud_rate: int, struct_def: dict[str, np.dtype], byte_order: str, output_data: Optional(IODataArrays)=None):
+        self.data_received_event = asyncio.Event()          # Event to indicate when data has been received
+        self.buffer = bytearray()                           # Buffer to store the data received over the serial connection
+        self.log = log                                      # Logger object for logging events                            
+        self.com_port = com_port                            # COM port to connect to
+        self.baud_rate = baud_rate                          # Baud rate to connect at
+        self.input_data = IOData(struct_def)                # Read from this from the buffer_to_data function to get the data from the Arduino
+        self.read_data = IOData(struct_def)                 # Write to this via the MainWindow callbacks for sending data to the Arduino
+        self.output_data = output_data                      # This is the IODataArrays object which is used to store the data. If this is not initialized then the data will not be stored
+        self.buffer_size = self.input_data.buffer_size      # Size of the buffer in bytes
+        self.start_buffering = False                        # Flag to indicate when to start buffering data
+        self.byte_order = BYTE_FORMATS[byte_order]          # Byte order to use when packing and unpacking data
 
     def connection_made(self, transport: serial_asyncio.SerialTransport):
+        """Take a serial connection and start a task to read from it"""
         self.transport = transport
         self.log.info(f'Port opened: {transport}')
         transport.serial.rts = False
         self.read_task = self.loop.create_task(self.read())
 
-    def data_received(self, data):
+    def data_received(self, data) -> None:
+        """When data is received over the Serial connection, add it to the buffer. Once the buffer is full then send it to the buffer_to_data function to convert it to a numpy array"""
         if self.start_buffering:
             self.buffer.extend(data)
             self.data_received_event.set()
-            if len(self.buffer) >= self.input_data.buffer_size:
+            if len(self.buffer) >= self.buffer_size:
                 self.loop.create_task(self.buffer_to_data())
         elif b'\xaa\xbb' in data:  # replace '\xaa\xbb' with your specific bytes
             self.start_buffering = True
             self.buffer.extend(data[data.index(b'\xaa\xbb')+2:])  # start buffering from after the start sequence
 
-
-    def connection_lost(self, exc):
+    def connection_lost(self, exc) -> None:
+        """If a connection is lost, cancel the read task and stop the event loop"""
         self.log.warning('Connection lost, port closed')
         self.transport.loop.stop()
         self.read_task.cancel()
 
-    def close_connection(self):
+    def close_connection(self) -> None:
+        """Close the serial connection"""
         self.log.info('Closing serial connection')
         self.transport.close()
 
-    async def create_connection(self, loop: qasync.QEventLoop, port, baudrate):
+    async def create_connection(self, loop: qasync.QEventLoop) -> serial_asyncio.SerialTransport:
+        """Create the connection and return the transport and protocol objects"""
         self.loop = loop
-        return await serial_asyncio.create_serial_connection(loop, lambda: self, port, baudrate=baudrate)
+        return await serial_asyncio.create_serial_connection(loop, lambda: self, self.com_port, baudrate=self.baud_rate)
    
-    async def write(self, data):
+    async def write(self, data) -> None:
+        """Write data to the serial connection"""
         if self.transport:
             self.transport.write(data)
             self.log.info('Data written: %s', data)
 
-    async def read(self):
+    async def read(self) -> None:
+        """Read data from the serial connection and add it to the buffer. Once the buffer is full then send it to the buffer_to_data function to convert it to a numpy array"""
         while True:
             await self.data_received_event.wait()
             self.data_received_event.clear()
             if len(self.buffer) >= self.input_data.buffer_size:
                 await self.buffer_to_data()
     
-    async def buffer_to_data(self):
-        # Assuming that the data is received in the same order as declared in IOData
+    async def buffer_to_data(self) -> None:
+        """Take the buffer and convert it and save it to the output_data object (IOData object)"""
+        # Assuming that the data is received in the same order as declared in IOData 
         fields = list(self.input_data.dtype_map.keys())
         # Create a numpy dtype object from the map, assuming little endian byte order
-        dt = np.dtype([(key, np.dtype(self.input_data.dtype_map[key]).newbyteorder('<')) for key in self.input_data.dtype_map])
+        dt = np.dtype([(key, np.dtype(self.input_data.dtype_map[key]).newbyteorder(self.byte_order)) for key in self.input_data.dtype_map])
         idx = 0
         for field in fields:
             size = np.dtype(dt[field]).itemsize
@@ -82,7 +110,7 @@ class SerialInterface(asyncio.Protocol):
                 print(f"Warning: Trying to assign data to non-array field '{field}' in IOData.")
             idx += size
         #self.buffer = self.buffer[idx:]
-        print(f"received {idx} btyes")
+        #print(f"received {idx} btyes")
         self.buffer = bytearray()
         self.input_data.io_count += 1
         self.log.debug(f"Received data: {self.input_data}")

@@ -300,8 +300,8 @@ void update_screen() {
 // -------------------------------- SERIAL INPUT STUFF --------------------------------
 uint8_t incoming_data_buffer[sizeof(dataSave) + 2];		// buffer for incoming serial data, including the start flag
 uint8_t incoming_data_index = 0;
-struct dataSave incoming_data_struct;						// struct to hold the incoming data
-struct dataSave outgoing_data_struct;						// struct to hold the outgoing data
+struct __attribute__((packed)) dataSave incoming_data_struct;						// struct to hold the incoming data
+struct __attribute__((packed)) dataSave outgoing_data_struct;						// struct to hold the outgoing data
 uint8_t *dummy_cptr;
 
 void unpack_serial_bytes(uint8_t *data){
