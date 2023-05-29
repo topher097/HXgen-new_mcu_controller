@@ -1,3 +1,19 @@
+"""
+pyEasyTransfer.py
+
+This is a Python implementation of the EasyTransfer Arduino library. It is used to send and receive data between an Arduino and a Python program over a serial connection. 
+The data is sent in a packet format which is defined in the EasyTransfer library. The packet format is as follows:
+
+start_byte_1 (0x06) | start_byte_2 (0x85) | packet_size (1 byte) | packet_type (1 byte) | data (packet_size - 2 bytes) | checksum (1 byte)
+
+The packet_size is the number of bytes in the structured data packet. 
+
+
+
+"""
+
+
+
 import asyncio
 import qasync
 import serial_asyncio
@@ -5,12 +21,12 @@ import logging
 import numpy as np
 from struct import pack
 from typing import Optional
-from io_dataclasses import IOData, IODataArrays
+from IOData import IOData, IODataArrays
 from dataclasses import dataclass
-
     
-START_BYTE = 0x7E
-STOP_BYTE  = 0x81
+# These are from the EasyTransfer library
+START_BYTE_1 = 0x06
+START_BYTE_2  = 0x85
 
 MAX_PACKET_SIZE = 0xFE
 
@@ -40,7 +56,7 @@ class SerialInterface(asyncio.Protocol):
         self.input_data = IOData(struct_def)                # Read from this from the buffer_to_data function to get the data from the Arduino
         self.read_data = IOData(struct_def)                 # Write to this via the MainWindow callbacks for sending data to the Arduino
         self.output_data = output_data                      # This is the IODataArrays object which is used to store the data. If this is not initialized then the data will not be stored
-        self.buffer_size = self.input_data.buffer_size      # Size of the buffer in bytes
+        self.buffer_size = self.input_data.struct_bytes + 1 # Size of the buffer in bytes
         self.start_buffering = False                        # Flag to indicate when to start buffering data
         self.byte_order = BYTE_FORMATS[byte_order]          # Byte order to use when packing and unpacking data
 
