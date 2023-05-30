@@ -17,13 +17,15 @@ EasyTransfer ETout, ETin;
 // Define the input and output structs
 // The input struct needs to be defined as such below to match the python code
 struct __attribute__ ((packed)) output_data {
-    int32_t time_ms;
+    uint32_t time_ms;
     float sensor;
+    uint32_t pc_time_ms_received;
     bool hello_received;
 } out_data;
 
 // The output struct needs to be defined as such below to match the python code
 struct __attribute__ ((packed)) input_data {
+    int32_t pc_time_ms;
     bool hello_flag;
 } in_data;
 
@@ -75,5 +77,6 @@ void loop(){
     if (ETin.receiveData()){
         // If new data then get the hello flag and save it to the global variable to be written on next send
         out_data.hello_received = in_data.hello_flag;
+        out_data.pc_time_ms_received = in_data.pc_time_ms;
     };
 };
