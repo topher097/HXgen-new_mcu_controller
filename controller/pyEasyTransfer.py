@@ -6,7 +6,7 @@ import numpy as np
 from struct import Struct
 from typing import Optional
 import serial_asyncio
-from IOData import IOData, IODataArrays
+from ETData import ETData, ETDataArrays
 
 
 BYTE_FORMATS = {
@@ -45,13 +45,20 @@ def create_struct_format(byte_order, struct_def):
         struct_format += numpy_dtype_to_struct_format(dtype)
     return struct_format
 
+def calculate_checksum(*byte_data: bytes, byte_order: str, footer_dtype: np.dtype) -> int:  
+    """Calculates the checksum of the given bytes, according to the given byte order and footer data type."""
+    checksum = 0
+    for byte in byte_data:
+        checksum += int.from_bytes(byte, byteorder=byte_order)
+    checksum = checksum % (2 ** (8 * footer_dtype.itemsize))
+    return checksum
 
 class PyEasyTransfer:
     def __init__(self, log: logging.Logger, com_port: str, baud_rate: int,
                  input_struct_def: Optional[dict[str, np.dtype]] = None,
                  output_struct_def: Optional[dict[str, np.dtype]] = None,
                  byte_order: str = 'little-endian', mode: str = 'both',
-                 save_read_data: Optional[IODataArrays]=None):
+                 save_read_data: Optional[ETDataArrays]=None):
 
         if mode not in ['input', 'output', 'both']:
             raise ValueError("Invalid mode. Mode must be one of 'input', 'output', 'both'")
@@ -81,15 +88,15 @@ class PyEasyTransfer:
         if self.mode in ['input', 'both']:
             if not input_struct_def:
                 raise ValueError("An input_struct_def must be provided when mode is 'input' or 'both'.")
-            self.read_data = IOData(input_struct_def)           # Read from this to get the data from the Arduino
+            self.read_data = ETData(input_struct_def)           # Read from this to get the data from the Arduino
             self.buffer_size = self.read_data.struct_bytes      # Size of the buffer in bytes
 
         if self.mode in ['output', 'both']:
             if not output_struct_def:
                 raise ValueError("An output_struct_def must be provided when mode is 'output' or 'both'.")
-            self.write_data = IOData(output_struct_def)         # Write to this to send data to the Arduino
+            self.write_data = ETData(output_struct_def)         # Write to this to send data to the Arduino
 
-        self.save_read_data = save_read_data    # This is the IODataArrays object which is used to store the data. If this is not initialized then the data will not be stored
+        self.save_read_data = save_read_data    # This is the ETDataArrays object which is used to store the data. If this is not initialized then the data will not be stored
         self.start_buffering = False            # Flag to indicate when to start buffering data
 
         if self.mode in ['input', 'both']:
@@ -139,8 +146,11 @@ class PyEasyTransfer:
             packed_data_size = np.uint8(len(packed_data))
  
             # Calculate the checksum
-            checksum = PyEasyTransfer.calculate_checksum(data, self.byte_order, self.footer_dtype)   
-            
+            checksum = packed_data_size
+            for byte in packed_data: 
+                byte = int(byte)        # Convert the byte to an integer
+                checksum ^= byte        # XOR the byte with the checksum
+                
             # Create the format string for the header and footer
             full_format = self.byte_order + self.header_format + self.size_format + self.struct_format_write.replace(self.byte_order, "") + self.footer_format
 
@@ -148,7 +158,7 @@ class PyEasyTransfer:
             byte_data_with_checksum = Struct(full_format).pack(self.header_bytes[0], self.header_bytes[1], packed_data_size, *data, checksum)
             self.writer.write(byte_data_with_checksum)
             await asyncio.sleep(0)  # yield control to the event loop
-            self.log.info(f"Sent data: {data}.")
+            self.log.info(f"Sent data: {data}. Checksum sent: {checksum}")
         else:
             raise ValueError("The PyEasyTransfer object is not in output mode. Data sending is not allowed.")
 
@@ -165,6 +175,21 @@ class PyEasyTransfer:
         else:
             raise ValueError("The PyEasyTransfer object is not in input mode. Waiting for data is not allowed.")
 
+    def save_data_recevied(self):
+        """Save the current read_data ETData object to the ETDataArrays object."""
+        ioc = self.save_read_data.io_count
+        if self.save_read_data.max_elements > 0 and ioc <= self.save_read_data.max_elements:
+            keys = list(self.read_data.struct_def.keys())
+            for i in range(len(keys)):
+                key = keys[i]
+                value = getattr(self.read_data, key)
+                getattr(self.save_read_data, key)[ioc] = value
+            self.save_read_data.io_count += 1
+            self.log.debug(f"Saved data to the ETDataArrays object. IO count: {ioc}.")
+        else:
+            self.log.error(f"Could not save data to the ETDataArrays object. IO count: {ioc}, Max element count: {self.save_read_data.max_elements}.")
+            
+
     def data_received(self, packet: bytes):
         if self.mode in ['both', 'input']:
             # Unpack the data into the read_data object
@@ -172,7 +197,11 @@ class PyEasyTransfer:
             #print(unpacked_data)
             for key, value in zip(self.read_data.struct_def.keys(), unpacked_data):
                 setattr(self.read_data, key, value)
+            self.read_data.io_count += 1
             self.log.info(f"Received data: {unpacked_data}.")
+            # If there is a save data object, then save the data
+            if self.save_read_data:
+                self.save_data_recevied()
         else:
             raise ValueError("The PyEasyTransfer object is not in input mode. Data receiving is not allowed.")
 
@@ -212,7 +241,7 @@ class EasyTransferReceiver(asyncio.Protocol):
                 self.pyeasytransfer.log.warning(f"Not enough bytes for the complete packet, expected {full_expected_size}, got {len(self.buffer)}")
                 break
 
-            # Extract the packet of data (the IOData data)
+            # Extract the packet of data (the ETData data)
             packet_start_index = self.pyeasytransfer.header_size + self.pyeasytransfer.size_size        
             packet_end_index = packet_start_index + packet_size
             packet = self.buffer[packet_start_index:packet_end_index]
@@ -224,7 +253,7 @@ class EasyTransferReceiver(asyncio.Protocol):
             end_index = packet_end_index + self.pyeasytransfer.footer_size
             self.buffer = self.buffer[end_index:]
 
-            # Compute the expected checksum
+            # Compute the expected checksum, note, each item is a byte in the packet, packet_size is the number of bytes in the packet as a byte
             expected_checksum = packet_size
             for item in packet:
                 item = int(item)
@@ -249,12 +278,14 @@ def get_data_struct_size(struct_def: dict):
 
 
 import time
-async def test_both_in_out():
+async def test_both_in_out(com_port: str, baud_rate: int):
     # Input data from the serial connection struct definition, exactly as defined in the Arduino code
     input_struct_def = {"time_ms": np.uint32,
                         "sensor": np.float32,
                         "pc_time_ms_received": np.uint32,
-                        "hello_received": np.bool_}
+                        "hello_received": np.bool_,
+                        "checksum_received": np.uint8,
+                        "checksum_expected": np.uint8}
 
     # Output data to the serial connection struct definition, exactly as defined in the Arduino code
     output_struct_def = {"pc_time_ms": np.uint32,
@@ -263,9 +294,6 @@ async def test_both_in_out():
     #print(f"Input struct size: {get_data_struct_size(input_struct_def)}")
     #print(f"Output struct size: {get_data_struct_size(output_struct_def)}")
     
-    # Arduino serial connection parameters
-    com_port = "COM10"
-    baud_rate = 115200
 
     # Create instance of PyEasyTransfer
     ET = PyEasyTransfer(
@@ -308,5 +336,8 @@ async def test_both_in_out():
 
 
 if __name__ == "__main__":
+    com_port = "COM14"
+    baud_rate = 115200
+    
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(test_both_in_out())
+    asyncio.run(test_both_in_out(com_port, baud_rate))

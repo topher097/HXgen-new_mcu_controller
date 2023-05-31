@@ -1,4 +1,5 @@
 import csv
+import numpy as np
 
 def generate_header_file(input_csv, output_header, min_temp, max_temp):
     with open(input_csv, 'r') as csv_file:
@@ -15,10 +16,12 @@ def generate_header_file(input_csv, output_header, min_temp, max_temp):
     # define the table in the header file
     header_content = "#ifndef RT_TABLE_H\n#define RT_TABLE_H\n\n"
     header_content += "const int RT_TABLE_SIZE = {};\n\n".format(len(rows))
-    header_content += "const float RT_TABLE[] = {\n"
+    header_content += "const float RT_TABLE[RT_TABLE_SIZE][2] = {\n"
 
     for row in rows:
         temp, res = row
+        temp = str(np.round(float(temp), 2))
+        res = str(np.round(float(res), 2))
         # format: {resistance, temperature},
         header_content += "    {" + res + ", " + temp + "},\n"
     

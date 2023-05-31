@@ -51,7 +51,7 @@ Note: The struct_def MUST be a dictionary with the following format:
 
 """IO Data Class for input/output data. Can be used to send, receive, and store data for multiple elements"""
 @dataclass
-class IODataArrays:
+class ETDataArrays:
     struct_def: dict[str, np.dtype]         # This is the dictionary which defines the data structure
     max_elements: int                       # This is the default size of the numpy arrays, set when initializing the class    
     io_count: int = 0                       # This is the number of elements in the numpy arrays which have been filled, keep at zero when initializing the class
@@ -59,7 +59,7 @@ class IODataArrays:
     def __post_init__(self):
         # Set the attributes of the class to match the struct_def and init the numpy arrays
         for variable, _dtype in self.struct_def.items():
-            setattr(self, variable, np.empty(shape=self.max_elements, dtype=_dtype))
+            setattr(self, variable, np.empty(shape=int(self.max_elements), dtype=_dtype))
         # Calculate the number of bytes in the struct_def
         self.struct_bytes = np.sum([np.dtype(dtype).itemsize for dtype in self.struct_def.values()]) 
 
@@ -89,9 +89,9 @@ class IODataArrays:
 
 """IO Data Class for single element of input data. Can be used to send, receive, and store data for a single element"""
 @dataclass
-class IOData:
+class ETData:
     struct_def: dict[str, np.dtype]         # This is the dictionary which defines the data structure of the input/output data
-    
+    io_count: int = 0
     def __post_init__(self):
         # Set the attributes of the class to match the struct_def and init the numpy arrays
         for variable, _dtype in self.struct_def.items():
@@ -112,19 +112,19 @@ class IOData:
 
 
 def test_io_data_arrays() -> None:
-    """ Test the creation of the IODataArrays class, addition of dummy data, grabbing values between indices, and getting the last element """
+    """ Test the creation of the ETDataArrays class, addition of dummy data, grabbing values between indices, and getting the last element """
     
-    print("\n\nTesting IODataArrays class")
+    print("\n\nTesting ETDataArrays class")
     
     # Test the creation of dataclass from dictionary
     struct_def = {'time': np.float32, 
                   'pressure': np.float32, 
                   'temperature': np.uint16,
                   'flag': np.bool_}
-    input_data = IODataArrays(struct_def=struct_def, max_elements=5)
+    input_data = ETDataArrays(struct_def=struct_def, max_elements=5)
     
     # Pretty print the attributes of the class, and their values
-    print("IODataArays Attributes:")
+    print("ETDataArays Attributes:")
     for key, value in input_data.__dict__.items():
         if type(value) is np.ndarray:
             print(f'{key}: {value.shape}, {value.dtype}')
@@ -146,19 +146,19 @@ def test_io_data_arrays() -> None:
 
 
 def test_io_data() -> None:
-    """ Test the creation of the IOData class, and the population of dummy data """
+    """ Test the creation of the ETData class, and the population of dummy data """
     
-    print("\n\nTesting IOData class")
+    print("\n\nTesting ETData class")
     
     # Test the creation of dataclass from dictionary
     struct_def = {'time': np.float32, 
                   'pressure': np.float32, 
                   'temperature': np.uint16,
                   'flag': np.bool_}
-    input_data = IOData(struct_def=struct_def)
+    input_data = ETData(struct_def=struct_def)
     
     # Pretty print the attributes of the class, and their values
-    print("IOData Attributes:")
+    print("ETData Attributes:")
     for key, value in input_data.__dict__.items():
         print(f'{key}: {value}')
     

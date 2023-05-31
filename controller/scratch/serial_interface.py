@@ -21,7 +21,7 @@ import logging
 import numpy as np
 from struct import pack
 from typing import Optional
-from IOData import IOData, IODataArrays
+from ETData import IOData, IODataArrays
 from dataclasses import dataclass
     
 # These are from the EasyTransfer library

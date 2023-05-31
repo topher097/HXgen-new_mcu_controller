@@ -49,6 +49,7 @@ private:
 	volatile int ret;
 	const String sensor_name;
 	TwoWire *_wire;
+	//SoftwareWire *_wire;
 	volatile uint16_t sensor_flow_value;
 	volatile byte aux_crc;
 	volatile uint16_t aux_value;

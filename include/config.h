@@ -82,10 +82,10 @@ const int touch_pressure_min = 10;        // minimum touch pressure to register 
 bool print_to_serial = false;            // print to serial port
 const int SERIAL_BAUD = 115200;          // baud rate for serial communication
 bool wait_for_serial = false;            // wait for serial connection before starting program
-uint16_t send_data_delay_ms = 1000;      // delay between sending data over serial port in ms
+uint16_t send_data_delay_ms = 1000/50;      // delay between sending data over serial port in ms
 
 // Analog (ADC) settings
-const int16_t analog_resolution = 12;                          // bits of resolution on ADC
+const int16_t analog_resolution = 10;                          // bits of resolution on ADC
 const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
 const float analog_vref = 3.3;                                 // Analog reference voltage, 5.0V for ArduinoMega2560      
 
@@ -152,21 +152,22 @@ float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
 
 // Function to get the resistance across the thermistor
 float calculate_thermistor_resistance(int analogReadValue, int maxAnalogRead, float referenceVoltage, int seriesResistor) {
-    float voltageAcrossThermistor = (analogReadValue / float(maxAnalogRead)) * referenceVoltage;
-    float thermistorResistance = seriesResistor * ((referenceVoltage / voltageAcrossThermistor) - 1.0);
+    //float voltageAcrossThermistor = (analogReadValue / float(maxAnalogRead)) * referenceVoltage;
+    //float thermistorResistance = seriesResistor * ((referenceVoltage / voltageAcrossThermistor) - 1.0);
+    float thermistorResistance = seriesResistor / (maxAnalogRead / float(analogReadValue) - 1.0);
     return thermistorResistance;
 }
 
 // Function to estimate temperature using the lookup table
 float lookup_thermistor_temperature(float resistance) {
     for (int i = 0; i < RT_TABLE_SIZE - 1; i++) {
-        float lowResistance = RT_TABLE[i][0];
-        float highResistance = RT_TABLE[i + 1][0];
+        float lowResistance = RT_TABLE[i + 1][0];
+        float highResistance = RT_TABLE[i][0];
 
         // if the resistance is within a range in the table
         if (lowResistance <= resistance && resistance <= highResistance) {
-            float lowTemp = RT_TABLE[i][1];
-            float highTemp = RT_TABLE[i + 1][1];
+            float lowTemp = RT_TABLE[i + 1][1];
+            float highTemp = RT_TABLE[i][1];
 
             // linear interpolation
             float temp = lowTemp + (resistance - lowResistance) * (highTemp - lowTemp) / (highResistance - lowResistance);
@@ -174,7 +175,7 @@ float lookup_thermistor_temperature(float resistance) {
         }
     }
     // if the resistance is not within the range of the table, return an error value
-    return -999.9;
+    return -999;
 }
 
 // Function to convert analog read value to temperature

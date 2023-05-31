@@ -28,6 +28,7 @@ Main file for the Teensy 4.1 that:
 #include "pages/main_page.h"
 #include "pages/piezo_page.h"
 #include "pages/inlet_temp_page.h"
+#include "pins_monitor.h"
 
 #define TO_MEGA_SERIAL Serial1		// Serial port to mega (monitor teensy using rx1 and tx1 pins)
 #define TO_DRIVER_SERIAL Serial8	// Serial port to driver (monitor teensy using rx8 and tx8 pins)
@@ -52,8 +53,10 @@ String temp;						// Temporary string for printing to serial monitor
 // //InletTempPage inlet_temp_page(&page_manager, &tft, &touch_screen, min_pressure, max_pressure, touchXMin, touchXMax, touchYMin, touchYMax);
 
 // Initialize the EasyTransfer object
-EasyTransfer ETin;				// EasyTransfer object for receiving data from the Driver for flow sensor data
-EasyTransfer ETout;			// EasyTransfer object for sending data to the Driver Teensy
+EasyTransfer ETin_driver;			// EasyTransfer object for receiving data from the Driver for flow sensor data
+EasyTransfer ETout_driver;			// EasyTransfer object for sending data to the Driver Teensy
+EasyTransfer ETin_pc;				// EasyTransfer object for receiving data from the PC
+EasyTransfer ETout_pc;				// EasyTransfer object for sending data to the PC
 
 // // Initialize the data logger object
 DataLogger data_logger;
@@ -73,7 +76,7 @@ QuickPID ropePID(&inlet_fluid_temp_measured, &rope_control_output, &inlet_fluid_
 Timer statusLEDTimer;
 Timer measureSensorsAndUpdateOutputTimer;
 Timer updateScreenTimer;
-Timer sendDataViaSerialTimer;
+Timer sendDataToPCTimer;
 uint16_t measure_count = 0;
 
 
@@ -88,37 +91,35 @@ void blink_status_led() {
 void measure_sensors() {
 	// -------------------------- INLET FLOW SENSORS FROM THE DRIVER --------------------------
 	// Pulse the trigger pin to the driver to measure the flow sensors and send the struct
-	// digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, HIGH);
-	// // Wait for the data from the driver
-	// while (!ETin.receiveData()) {
-	// 	delay(1);
-	// }
-	// digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, LOW);
-	// // Save the data from the driver
-	// inlet_flow_sensor_ml_min = driver_to_monitor_data.inlet_flow_sensor_ml_min;
-	// outlet_flow_sensor_ml_min = driver_to_monitor_data.outlet_flow_sensor_ml_min;
-	inlet_flow_sensor_ml_min = 12345.0;
-	outlet_flow_sensor_ml_min = 67890.0;
+	digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, HIGH);
+	// Wait for the data from the driver
+	while (!ETin_driver.receiveData()) {
+		delay(1);
+	}
+	digitalWrite(MEGA_MEASURE_FLOW_TRIGGER_PIN, LOW);
+	// Save the data from the driver
+	inlet_flow_sensor_ml_min = driver_to_monitor_data.inlet_flow_sensor_ml_min;
+	outlet_flow_sensor_ml_min = driver_to_monitor_data.outlet_flow_sensor_ml_min;
 
 	// -------------------------- THERMISTORS --------------------------
 	// Measure the thermistors
 	for (int i = 0; i < NUM_THERMISTORS; i++) {
 		int reading = analogRead(THERMISTOR_PINS[i]);
-		//thermistor_temps[i] = convert_thermistor_analog_to_celcius(reading, max_analog, analog_vref, thermistor_R1);
-		thermistor_temps[i] = 123.45;
+		thermistor_temps[i] = convert_thermistor_analog_to_celcius(reading, max_analog, analog_vref, thermistor_R1);
+		//thermistor_temps[i] = float(reading);
 	}
 	
 	// -------------------------- INLET FLUID THERMOCOUPLE --------------------------
 	// Measure the temperature of the inlet fluid (thermocouple)			
-	//inlet_fluid_temp_measured = (float)thermocouple.readCelsius(); 
-	inlet_fluid_temp_measured = 123.45;
+	inlet_fluid_temp_measured = (float)thermocouple.readCelsius(); 
+	//inlet_fluid_temp_measured = 123.45;
 }
 
 // -------------------------------- DATA LOGGER FUNCTIONS --------------------------------
 // https://forum.pjrc.com/threads/60809-Generic-data-logger-object/page4?highlight=fast+datalogger
-#define SAMPLERATE 50				// Samples per second to collect and save (ms time between samples is 1/SAMPLERATE)
+#define SAMPLERATE 100				// Samples per second to collect and save (ms time between samples is 1/SAMPLERATE)
 #define BUFFERMSEC 200				// Buffer limit write speed in milliseconds
-#define SYNCINTERVAL 1500			// Sync interval in milliseconds
+#define SYNCINTERVAL 1000			// Sync interval in milliseconds
 char logfilename[64];				// filename for the log file
 #define MAXBUFFER 8000000			// Make sure that enough room is left for the rest of the program
 uint8_t *mybuffer = (uint8_t *)0x80000000;								// pointer to the buffer
@@ -251,44 +252,6 @@ void write_data_save_struct( void* vdp ) {
 	// }
 };
 
-// Called from the playback. This is used to verify the data
-void my_verify(void *vdp) {
-	struct dataSave *dp;
-	dp = (struct dataSave *)vdp;
-	// Check to see if the file playback is ended
-	if (dp == NULL) {
-		// Serial.println("End of file playback.");
-		endplayback = true;
-		return;
-	}
-	// Check to see if the data is correct (number of records recorded is the same number as verified)
-	if (dp->numrecords != pbrecnum) {
-		// Serial.printf("Record number error at %lu", dp->numrecords);
-		// Serial.printf("  File: %lu  local: %lu\n", dp->numrecords, pbrecnum);
-		pbrecnum = dp->numrecords;
-		verifyerrors++;
-	}
-	// Increment the verify record number and display the record number every 10000 records
-	pbrecnum++;
-	//if ((pbrecnum % 10000) == 0)Serial.printf("Recnum: %lu\n", pbrecnum);
-};
-
-// Called from the datalogger CheckLogger function, displays the dinary point every x amount of seconds
-void my_binary_display( void* vdp ) {
-	// struct dataSave *dp;
-	// dp = (struct dataSave *)vdp;
-	// TLoggerStat *tsp;
-	// tsp =  data_logger.GetStatus(); // updates values collected at interrupt time
-
-	// if (!logging) return;
-	// Serial.printf("%8.3f,  ", dp->time_stamp_ms / 1000.0);
-	// Serial.printf(" Records:%10lu  ", dp->numrecords);
-	// Serial.printf(" Overflows: %4lu\n", tsp->bufferoverflows);
-	// if ( dp->cptr > bufferend) {
-	// 	Serial.printf("Saved data outside buffer at %p\n", dp->cptr);
-	// }
-}
-
 
 // -------------------------------- SCREEN UPDATE VIA PAGE MANAGER --------------------------------
 // Update the screen with relavent information (callback function for the timer)
@@ -300,135 +263,138 @@ void update_screen() {
 // -------------------------------- SERIAL INPUT STUFF --------------------------------
 uint8_t incoming_data_buffer[sizeof(dataSave) + 2];		// buffer for incoming serial data, including the start flag
 uint8_t incoming_data_index = 0;
-struct __attribute__((packed)) dataSave incoming_data_struct;						// struct to hold the incoming data
-struct __attribute__((packed)) dataSave outgoing_data_struct;						// struct to hold the outgoing data
+struct dataSave monitor_to_pc_data;						// struct to hold the outgoing data to PC
 uint8_t *dummy_cptr;
 
-void unpack_serial_bytes(uint8_t *data){
-	// Copy the bytes to the struct, starting at the 3rd byte (the first two bytes are the start flag)
-	memcpy(&incoming_data_struct, data, sizeof(dataSave));
+void save_data_from_driver(){
+	// Save the global variables via the driver_to_monitor_data struct
+	inlet_flow_sensor_ml_min = driver_to_monitor_data.inlet_flow_sensor_ml_min;
+	outlet_flow_sensor_ml_min = driver_to_monitor_data.outlet_flow_sensor_ml_min;
+}
 
-	// Now that the data is unpacked, load it into the global variables
-	// We only care about some data coming in, so we only load those variables
-	piezo_1_freq = incoming_data_struct.piezo_1_freq;
-	piezo_2_freq = incoming_data_struct.piezo_2_freq;
-	piezo_1_vpp = incoming_data_struct.piezo_1_vpp;
-	piezo_2_vpp = incoming_data_struct.piezo_2_vpp;
-	piezo_1_phase = incoming_data_struct.piezo_1_phase;
-	piezo_2_phase = incoming_data_struct.piezo_2_phase;
-	piezo_1_enable = incoming_data_struct.piezo_1_enable;
-	piezo_2_enable = incoming_data_struct.piezo_2_enable;
-	heater_block_enable = incoming_data_struct.heater_block_enable;
-	rope_heater_enable = incoming_data_struct.rope_heater_enable;
-	heat_flux = incoming_data_struct.heat_flux;
-
-	// Write the data to the monitor_to_driver_data struct
-	monitor_to_driver_data.piezo_1_freq = piezo_1_freq;
-	monitor_to_driver_data.piezo_2_freq = piezo_2_freq;
-	monitor_to_driver_data.piezo_1_vpp = piezo_1_vpp;
-	monitor_to_driver_data.piezo_2_vpp = piezo_2_vpp;
-	monitor_to_driver_data.piezo_1_phase = piezo_1_phase;
-	monitor_to_driver_data.piezo_2_phase = piezo_2_phase;
+void send_data_to_driver(){
+	// Write global data to the monitor_to_driver_data struct
 	monitor_to_driver_data.piezo_1_enable = piezo_1_enable;
 	monitor_to_driver_data.piezo_2_enable = piezo_2_enable;
+	monitor_to_driver_data.piezo_1_freq = piezo_1_freq;
+	monitor_to_driver_data.piezo_2_freq = piezo_2_freq;
+	monitor_to_driver_data.piezo_1_phase = piezo_1_phase;
+	monitor_to_driver_data.piezo_2_phase = piezo_2_phase;
+	monitor_to_driver_data.piezo_1_vpp = piezo_1_vpp;
+	monitor_to_driver_data.piezo_2_vpp = piezo_2_vpp;
 
-	// Set the new data flag to send to piezo
+	ETout_driver.sendData();
+	new_piezo_data = false;		// Reset the flag
+}
+	
+void send_data_to_pc(){
+	// Write the struct
+	monitor_to_pc_data.time_stamp_us = filemicros;
+	monitor_to_pc_data.time_stamp_ms = filemillis;
+	monitor_to_pc_data.heat_flux = heat_flux;
+	monitor_to_pc_data.inlet_flow_sensor_ml_min = inlet_flow_sensor_ml_min;
+	monitor_to_pc_data.outlet_flow_sensor_ml_min = outlet_flow_sensor_ml_min;
+	monitor_to_pc_data.inlet_fluid_temp = inlet_fluid_temp_measured;
+	monitor_to_pc_data.inlet_fluid_temp_setpoint = inlet_fluid_temp_setpoint;
+	monitor_to_pc_data.piezo_1_freq = piezo_1_freq;
+	monitor_to_pc_data.piezo_2_freq = piezo_2_freq;
+	monitor_to_pc_data.piezo_1_vpp = piezo_1_vpp;
+	monitor_to_pc_data.piezo_2_vpp = piezo_2_vpp;
+	monitor_to_pc_data.piezo_1_phase = piezo_1_phase;
+	monitor_to_pc_data.piezo_2_phase = piezo_2_phase;
+	monitor_to_pc_data.heater_block_enable = heater_block_enable;
+	monitor_to_pc_data.rope_heater_enable = rope_heater_enable;
+	monitor_to_pc_data.piezo_1_enable = piezo_1_enable;
+	monitor_to_pc_data.piezo_2_enable = piezo_2_enable;
+	monitor_to_pc_data.heat_flux = heat_flux;
+	monitor_to_pc_data.thermistor_1_temp_c = thermistor_temps[0];
+	monitor_to_pc_data.thermistor_2_temp_c = thermistor_temps[1];
+	monitor_to_pc_data.thermistor_3_temp_c = thermistor_temps[2];
+	monitor_to_pc_data.thermistor_4_temp_c = thermistor_temps[3];
+	monitor_to_pc_data.thermistor_5_temp_c = thermistor_temps[4];
+	monitor_to_pc_data.thermistor_6_temp_c = thermistor_temps[5];
+	monitor_to_pc_data.thermistor_7_temp_c = thermistor_temps[6];
+	monitor_to_pc_data.thermistor_8_temp_c = thermistor_temps[7];
+	monitor_to_pc_data.thermistor_9_temp_c = thermistor_temps[8];
+	monitor_to_pc_data.thermistor_10_temp_c = thermistor_temps[9];
+	monitor_to_pc_data.thermistor_11_temp_c = thermistor_temps[10];
+	monitor_to_pc_data.thermistor_12_temp_c = thermistor_temps[11];
+	monitor_to_pc_data.thermistor_13_temp_c = thermistor_temps[12];
+	monitor_to_pc_data.thermistor_14_temp_c = thermistor_temps[13];
+	monitor_to_pc_data.numrecords = numrecs;
+	monitor_to_pc_data.cptr = dummy_cptr;
+
+	// Now send the struct
+	ETout_pc.sendData();
+}
+
+void save_data_from_pc(){
+	// Save the global variables via the pc_to_monitor_data struct
+	inlet_fluid_temp_setpoint = pc_to_monitor_data.inlet_fluid_temp_setpoint;
+	heater_block_enable = pc_to_monitor_data.heater_block_enable;
+	rope_heater_enable = pc_to_monitor_data.rope_heater_enable;
+	piezo_1_enable = pc_to_monitor_data.piezo_1_enable;
+	piezo_2_enable = pc_to_monitor_data.piezo_2_enable;
+	piezo_1_freq = pc_to_monitor_data.piezo_1_freq;
+	piezo_2_freq = pc_to_monitor_data.piezo_2_freq;
+	piezo_1_vpp = pc_to_monitor_data.piezo_1_vpp;
+	piezo_2_vpp = pc_to_monitor_data.piezo_2_vpp;
+	piezo_1_phase = pc_to_monitor_data.piezo_1_phase;
+	heat_flux = pc_to_monitor_data.heat_flux;
+
+	// Set the flags
 	new_piezo_data = true;
 }
 
-void send_data_via_serial(){
-	// Write the struct
-	outgoing_data_struct.time_stamp_us = filemicros;
-	outgoing_data_struct.time_stamp_ms = filemillis;
-	outgoing_data_struct.heat_flux = heat_flux;
-	outgoing_data_struct.inlet_flow_sensor_ml_min = inlet_flow_sensor_ml_min;
-	outgoing_data_struct.outlet_flow_sensor_ml_min = outlet_flow_sensor_ml_min;
-	outgoing_data_struct.inlet_fluid_temp = inlet_fluid_temp_measured;
-	outgoing_data_struct.inlet_fluid_temp_setpoint = inlet_fluid_temp_setpoint;
-	outgoing_data_struct.piezo_1_freq = piezo_1_freq;
-	outgoing_data_struct.piezo_2_freq = piezo_2_freq;
-	outgoing_data_struct.piezo_1_vpp = piezo_1_vpp;
-	outgoing_data_struct.piezo_2_vpp = piezo_2_vpp;
-	outgoing_data_struct.piezo_1_phase = piezo_1_phase;
-	outgoing_data_struct.piezo_2_phase = piezo_2_phase;
-	outgoing_data_struct.heater_block_enable = heater_block_enable;
-	outgoing_data_struct.rope_heater_enable = rope_heater_enable;
-	outgoing_data_struct.piezo_1_enable = piezo_1_enable;
-	outgoing_data_struct.piezo_2_enable = piezo_2_enable;
-	outgoing_data_struct.heat_flux = heat_flux;
-	outgoing_data_struct.thermistor_1_temp_c = thermistor_temps[0];
-	outgoing_data_struct.thermistor_2_temp_c = thermistor_temps[1];
-	outgoing_data_struct.thermistor_3_temp_c = thermistor_temps[2];
-	outgoing_data_struct.thermistor_4_temp_c = thermistor_temps[3];
-	outgoing_data_struct.thermistor_5_temp_c = thermistor_temps[4];
-	outgoing_data_struct.thermistor_6_temp_c = thermistor_temps[5];
-	outgoing_data_struct.thermistor_7_temp_c = thermistor_temps[6];
-	outgoing_data_struct.thermistor_8_temp_c = thermistor_temps[7];
-	outgoing_data_struct.thermistor_9_temp_c = thermistor_temps[8];
-	outgoing_data_struct.thermistor_10_temp_c = thermistor_temps[9];
-	outgoing_data_struct.thermistor_11_temp_c = thermistor_temps[10];
-	outgoing_data_struct.thermistor_12_temp_c = thermistor_temps[11];
-	outgoing_data_struct.thermistor_13_temp_c = thermistor_temps[12];
-	outgoing_data_struct.thermistor_14_temp_c = thermistor_temps[13];
-	outgoing_data_struct.numrecords = numrecs;
-	outgoing_data_struct.cptr = dummy_cptr;
-
-	// Now send the struct
-	// Allocate a buffer for the data
-	uint8_t data[sizeof(dataSave) + 2];  // +2 for start flag
-	
-	// Set the start flag
-	data[0] = 0xaa;
-	data[1] = 0xbb;
-	
-	// Copy the struct into the buffer
-	memcpy(data + 2, &outgoing_data_struct, sizeof(dataSave));  // Offset by 2 for start flag
-	
-	// Send the data over the serial port
-	Serial.write(data, sizeof(data));
+void fast_led_blink(){
+	// Blink the LED at 10 Hz
+	digitalWriteFast(LED_BUILTIN, HIGH);
+	delay(50);
+	digitalWriteFast(LED_BUILTIN, LOW);
+	delay(50);
 }
 
 // -------------------------------- SETUP --------------------------------
 void setup() {
 	// Initialise the EasyTransfer objects
 	//ETin_mega.begin(details(mega_data), &TO_MEGA_SERIAL);
-	ETout.begin(details(monitor_to_driver_data), &Serial8);
-	ETin.begin(details(driver_to_monitor_data), &Serial8);
+	ETout_driver.begin(details(monitor_to_driver_data), &Serial8);
+	ETin_driver.begin(details(driver_to_monitor_data), &Serial8);
+	ETout_pc.begin(details(monitor_to_pc_data), &Serial);
+	ETin_pc.begin(details(pc_to_monitor_data), &Serial);
 
 	// Initialize the serial communication
-    Serial.begin(SERIAL_BAUD);
-	if (wait_for_serial) {while (!Serial) {};};			// wait for serial port to connect. Needed for native USB port only
+    Serial.begin(BAUDRATE);
+	Serial8.begin(BAUDRATE);
+	//if (wait_for_serial) {while (!Serial) {};};			// wait for serial port to connect. Needed for native USB port only
 	
 	if (Serial.available()) {
 		Serial.read(); // clear the serial port
 	}
 
-	delay(1500);
-	Serial.println(F("Starting..."));
 	delay(100);
-	uint8_t t = 45;
-	dummy_cptr = &t;
+	//Serial.println(F("Starting..."));
 
 	// --------------------------- DATA LOGGER SETUP ---------------------------
 	uint32_t bufflen;
 	data_logger.SetDBPrint(true);  		// turn on debug output	
 	// try starting SD Card and file system
 	if (!data_logger.InitStorage(NULL)) { 	
-		Serial.println(F("SD card failed to initialize, or file system not found"));
-		while (1) {delay(1000);}
+		// IF INITIALIZATION FAILS, LOOP FOREVER while fast flashing LED
+		while (1) {fast_led_blink();}
 	}
 	// now try to initialize buffer.  Check that request falls within
 	// size of local buffer or if it will fit on heap, save_data is in data_transfer.h
 	bufflen = data_logger.InitializeBuffer(sizeof(dataSave), SAMPLERATE, BUFFERMSEC, mybuffer);
 	bufferend = mybuffer + bufflen;
-	Serial.printf("End of buffer at %p\n", bufferend);
+	//Serial.printf("End of buffer at %p\n", bufferend);
 	if ((bufflen == 0) || (bufflen > MAXBUFFER)) {
-		Serial.println(F("Not enough buffer space!  Reduce buffer time or sample rate."));
-		while (1) {delay(1000);}
+		// If not successful, loop forever while fast flashing LED. Reduce SAMPLERATE or BUFFERMSEC
+		while (1) {fast_led_blink();}
 	}
 	data_logger.AttachCollector(&write_data_save_struct);		// attach the customized callback function
-	data_logger.AttachDisplay(&my_binary_display, 5000);		// display written data once per 5 seconds
-	data_logger.AttachPlayback(&my_verify);						// check for missing records
+	//data_logger.AttachDisplay(&my_binary_display, 5000);		// display written data once per 5 seconds
+	//data_logger.AttachPlayback(&my_verify);						// check for missing records
 
 	// --------------------------- THERMOCOUPLE SETUP ---------------------------
 	thermocouple.begin();						// on SPI bus
@@ -452,7 +418,7 @@ void setup() {
 
 	// --------------------------- ANALOG SETTINGS SETUP ---------------------------
 	// Set the ADC settings
-	analogReadResolution(analog_resolution);		// Set the ADC resolution to 12 bits (set in config.h)
+	analogReadResolution(analog_resolution);		// Set the ADC resolution to n bits (set in config.h)
 	analogReference(analog_vref);					// Set the ADC reference voltage to 3.3V rather than 5V
 
 	// --------------------------- PIN SETUP ---------------------------	
@@ -486,9 +452,9 @@ void setup() {
 	// updateScreenTimer.setInterval(screen_update_delay_ms, -1);
 	// updateScreenTimer.setCallback(update_screen);
 	// updateScreenTimer.start();
-	sendDataViaSerialTimer.setInterval(send_data_delay_ms, -1);
-	sendDataViaSerialTimer.setCallback(send_data_via_serial);
-	sendDataViaSerialTimer.start();
+	sendDataToPCTimer.setInterval(send_data_delay_ms, -1);
+	sendDataToPCTimer.setCallback(send_data_to_pc);
+	sendDataToPCTimer.start();
 
 	// --------------------------- PID SETUP ---------------------------
 	ropePID.SetOutputLimits(0, window_size_ms);
@@ -506,7 +472,7 @@ void setup() {
 	// //page_manager.add_page(PIEZO_CONFIG_PAGE, &piezo_page);
 	// page_manager.set_page(MAIN_PAGE);		// Set the first page to main page
 	// //Serial.println("Set the main page as the current page");
-	Serial.println(F("Finished setup"));
+	//Serial.println(F("Finished setup"));
 }
 
 void loop() {
@@ -514,30 +480,21 @@ void loop() {
 	statusLEDTimer.update();
 	measureSensorsAndUpdateOutputTimer.update();
 	//updateScreenTimer.update();
-	sendDataViaSerialTimer.update();
+	sendDataToPCTimer.update();
 
-	// --------------------------- Check the serial ---------------------------
+	// --------------------------- CHECK EASY TRANSFER IN DATA ---------------------------
 	// Check if data is available to read
-	while (Serial.available() > 0) {
-		// Read a byte
-		incoming_data_buffer[incoming_data_index++] = Serial.read();
-
-		// If the buffer is full
-		if (incoming_data_index >= sizeof(dataSave) + 2) {
-		// Check start flag
-		if (incoming_data_buffer[0] == 0xaa && incoming_data_buffer[1] == 0xbb) {
-			// Pass the buffer (minus start flag) to the unpack function
-			unpack_serial_bytes(incoming_data_buffer + 2);
-		}
-		// Reset the buffer index
-		incoming_data_index = 0;
-		}
+	// if (Serial8.available()){
+	// 	ETin_driver.receiveData();		// Read the data from the serial port
+	// 	save_data_from_driver();
+	// }
+	if (ETin_pc.receiveData()){
+		save_data_from_pc();
 	}
 
 	// --------------------------- Update the EasyTransfer OUT ---------------------------
 	if (new_piezo_data){
-		ETout.sendData();
-		new_piezo_data = false;
+		send_data_to_driver();
 	}
 
 	// --------------------------- Update the data logger ---------------------------
@@ -546,21 +503,22 @@ void loop() {
 	data_logger.CheckLogger();     		// Check for data to write to SD at regular intervals
 	if (logging) {
 		if (tsp->spaceavailable < (10240l * 1024)) { //we are within 10MB of end of card
-			Serial.println(F("SD card is nearly full! Halting logging!"));
+			//Serial.println(F("SD card is nearly full! Halting logging!"));
 			quit_logging();
 			get_status();
+			fast_led_blink();
 		}
 	}
 	
 	// Check for the start/stop recording flag from the Monitor (run once when the flag is set from TFT button)
 	if (start_stop_recording && !logging) {
 		// Start the data logger, logging flag is set in start_logging()
-		Serial.println("Start logging.");
+		//Serial.println("Start logging.");
 		start_logging();
 	}
 	if (!start_stop_recording && logging) {
 		// Stop the data logger, logging flag is set in quit_logging()
-		Serial.println("Stop logging.");
+		//Serial.println("Stop logging.");
 		quit_logging();
 	} 
 		
@@ -568,27 +526,30 @@ void loop() {
 	// Run the PID loop
 	// rope_control_output is the TIME in milliseconds that the rope heater should be on, this is calculated in the PID controller
 	// the control pins need to be PWM enabled for this to work
-	unsigned long ms_now = millis();
-	if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
-	if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
-		if (ms_now > next_switch_time){
-			relay_status = true;
-			next_switch_time = ms_now + debounce_delay_ms;
-			digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
-		}
-	} else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
-		if (ms_now > next_switch_time){
-			relay_status = false;
-			next_switch_time = ms_now + debounce_delay_ms;
-			digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
+	if (rope_heater_enable){
+		unsigned long ms_now = millis();
+		if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
+		if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
+			if (ms_now > next_switch_time){
+				relay_status = true;
+				next_switch_time = ms_now + debounce_delay_ms;
+				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
+			}
+		} else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
+			if (ms_now > next_switch_time){
+				relay_status = false;
+				next_switch_time = ms_now + debounce_delay_ms;
+				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
+			}
 		}
 	}
 
 	// --------------------------- Control the heater block ---------------------------
 	// Update the PWM output of the heater block pin to match the desired heat flux
-	heat_flux_pwm = map(heat_flux, 0, max_heat_flux, 0, 255);
-	analogWrite(HEATER_BLOCK_RELAY_CONTROL_PIN, heat_flux_pwm);
-
+	if (heater_block_enable){
+		heat_flux_pwm = map(heat_flux, 0, max_heat_flux, 0, 255);
+		analogWrite(HEATER_BLOCK_RELAY_CONTROL_PIN, heat_flux_pwm);
+	}
 	
 	delay(2);		// Delay to allow the data logger to run, this is the minimum delay for the data logger to run
 }

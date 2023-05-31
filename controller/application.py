@@ -6,6 +6,8 @@ from logging import Logger
 from math import pi
 from turtle import left, up
 import matplotlib
+
+from pyEasyTransfer import PyEasyTransfer
 matplotlib.use('Qt5Agg')
 
 import sys
@@ -14,6 +16,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal, QEasingCurve, QSize, Qt, QTimer, Slot, QRect, QSize)
 from PySide6.QtGui import (QMatrix4x4, QQuaternion, QVector3D, QWindow, QFont)
 from PySide6.QtWidgets import (QMainWindow, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QTextEdit, QLayout, QLayoutItem, QTextBrowser, QWidgetItem)
+import pyqtgraph as pg
 
 # Import custom Qt elements
 from application_elements import CentralWidget, MplCanvas, ListSlider, QLoggerStream
@@ -25,6 +28,7 @@ from matplotlib.colors import ListedColormap
 from matplotlib.offsetbox import AnchoredText
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.animation as pltanim
 
 # Other imports
 import numpy as np
@@ -36,11 +40,12 @@ from datetime import datetime
 import os
 from multiprocessing import Process
 from threading import Thread
+import qasync
 
 # Custom script imports
-from borderlayout import *
-import data_transfer
-from serial_interface import SerialInterface
+# from borderlayout import *
+# import data_transfer
+# from serial_interface import SerialInterface
 
 
 # from utils import get_nearest_freq_index, get_point_object
@@ -101,13 +106,16 @@ min_width_slider = 30
     
 """Create the main window for the application"""
 class MainWindow(QMainWindow):
-    def __init__(self, window_title: str, log: Logger, serial_interface: SerialInterface, *args, **kwargs):
+    def __init__(self, window_title: str, loop: qasync.QEventLoop, log: Logger, serial_interface: PyEasyTransfer, 
+                 input_data_rate: int, test_time: int, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.serial_inteface = serial_interface
+        self.ET = serial_interface
         self.log = log      # Get the logger from the main application
+        self.loop = loop
         
-        self.input_data = data_transfer.IOData(5000)
-        self.output_data = data_transfer.IOData(1)
+        self.input_data = self.ET.read_data
+        self.output_data = self.ET.write_data
+        self.last_io_count = 0
  
         # Initialize the main window
         self.log.info("Initializing application window")
@@ -123,6 +131,10 @@ class MainWindow(QMainWindow):
         button_size_policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         button_size_policy.setVerticalStretch(1)
         button_size_policy.setHeightForWidth(True)
+        
+        # Set asyncio task to continiously read data
+        self.log.info("Starting asyncio task to read data")
+        self.read_data_task = self.loop.create_task(self.ET.listen())
         
         # Button stype
         button_style =  """
@@ -366,23 +378,86 @@ class MainWindow(QMainWindow):
         
         # -------------------------------- PLOT ANIMATION ELEMENTS --------------------------------
         self.log.debug("Creating plot animation elements")
-        # Create MplCanvas for the thermistor temperature data
-        self.thermistor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
-        self.thermistor_plot_toolbar = NavigationToolbar(self.thermistor_plot_canvas, self)
-        self.thermistor_plot_widget = QWidget()
-        self.thermistor_plot_layout = QVBoxLayout()
-        self.thermistor_plot_layout.addWidget(self.thermistor_plot_toolbar)
-        self.thermistor_plot_layout.addWidget(self.thermistor_plot_canvas)
-        self.thermistor_plot_widget.setLayout(self.thermistor_plot_layout)
+        self.plot_x_time_limit = 30     # Seconds to show on the plots
+        # Create a layout for the two plots
+        self.plot_layout = pg.GraphicsLayoutWidget(show=True)
         
-        # Create MplCanvas for the flow sensor data
-        self.flow_sensor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
-        self.flow_sensor_plot_toolbar = NavigationToolbar(self.flow_sensor_plot_canvas, self)
-        self.flow_sensor_plot_widget = QWidget()
-        self.flow_sensor_plot_layout = QVBoxLayout()
-        self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_toolbar)
-        self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_canvas)
-        self.flow_sensor_plot_widget.setLayout(self.flow_sensor_plot_layout)
+        # Add the two plots
+        self.thermistor_plot = self.plot_layout.addPlot(row=0, col=0)
+        self.flow_sensor_plot = self.plot_layout.addPlot(row=1, col=0)
+        
+        # Create the data numpy arrays
+        num_elements_plot = input_data_rate * self.plot_x_time_limit
+        num_thermistors = 12
+        self.time_data = np.empty(shape=(num_elements_plot))                          # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.thermistor_data = np.empty(shape=(num_thermistors, num_elements_plot))      # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.flow_sensor_data = np.empty(shape=(2, num_elements_plot))                   # Each time the flow sensor is read, the data shifted using np.roll and is added to the end of this array
+        
+        # Set background color of plots
+        vb1 = self.thermistor_plot.getViewBox()
+        vb1.setBackgroundColor('w')
+        vb2 = self.flow_sensor_plot.getViewBox()
+        vb2.setBackgroundColor('w')
+        
+        # Set the plot attributes
+        self.thermistor_plot.showGrid(x=True, y=True)  # Show grid
+        self.thermistor_plot.setLabel('left', 'Temperature', units='°C')  # Set y-axis label
+        self.thermistor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
+        self.thermistor_plot.setTitle('Thermistor Temperature vs. Time')  # Set plot title
+        self.thermistor_plot.setLimits(yMin=20, yMax=120)  # Set y-axis limits
+        self.thermistor_plot.addLegend(offset=(-1, 1))  # Set legend offset
+        
+        self.flow_sensor_plot.showGrid(x=True, y=True)  # Show grid
+        self.flow_sensor_plot.setLabel('left', 'Flow Rate', units='mL/min')  # Set y-axis label
+        self.flow_sensor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
+        self.flow_sensor_plot.setTitle('Flow Sensor Flow Rate vs. Time')  # Set plot title
+        self.flow_sensor_plot.setLimits(yMin=0, yMax=1000)  # Set y-axis limits
+        self.flow_sensor_plot.addLegend(offset=(-1, 1))  # Set legend offset
+        
+        # Create the curve objects
+        colors = [
+            (255, 100, 50),     # Orange
+            (255, 100, 200),    # Pink
+            (255, 0, 0),        # Red
+            (255, 255, 0),      # Yellow
+            (0, 255, 0),        # Green
+            (0, 255, 255),      # Cyan
+            (0, 0, 255),        # Blue
+            (255, 0, 255),      # Magenta
+            (0, 0, 0),          # Black
+            (200, 200, 255),    # Sky Blue
+            (255, 200, 200),    # Salmon
+            (200, 255, 200),    # Spring green           
+        ]
+        line_width = 2
+        self.thermistor_curves = [self.thermistor_plot.plot(pen=pg.mkPen(color=colors[i], width=line_width), name=f"Thermistor {i+1}") for i in range(num_thermistors)]
+        fs_inlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[0], width=line_width), name="Inlet Flow Sensor")
+        fs_outlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[1], width=line_width), name="Outlet Flow Sensor")
+        self.flow_sensor_curves = [fs_inlet, fs_outlet]
+        
+        # Add these PlotItems to a QWidget
+        self.plot_widget = QWidget()
+        self.plot_layout_widget = QVBoxLayout()
+        self.plot_layout_widget.addWidget(self.plot_layout)
+        self.plot_widget.setLayout(self.plot_layout_widget)
+        
+        # # Create MplCanvas for the thermistor temperature data
+        # self.thermistor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
+        # self.thermistor_plot_toolbar = NavigationToolbar(self.thermistor_plot_canvas, self)
+        # self.thermistor_plot_widget = QWidget()
+        # self.thermistor_plot_layout = QVBoxLayout()
+        # self.thermistor_plot_layout.addWidget(self.thermistor_plot_toolbar)
+        # self.thermistor_plot_layout.addWidget(self.thermistor_plot_canvas)
+        # self.thermistor_plot_widget.setLayout(self.thermistor_plot_layout)
+        
+        # # Create MplCanvas for the flow sensor data
+        # self.flow_sensor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
+        # self.flow_sensor_plot_toolbar = NavigationToolbar(self.flow_sensor_plot_canvas, self)
+        # self.flow_sensor_plot_widget = QWidget()
+        # self.flow_sensor_plot_layout = QVBoxLayout()
+        # self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_toolbar)
+        # self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_canvas)
+        # self.flow_sensor_plot_widget.setLayout(self.flow_sensor_plot_layout)
         
         # -------------------------------- OTHER ELEMENTS --------------------------------
         self.log.debug("Creating other elements")
@@ -446,9 +521,10 @@ class MainWindow(QMainWindow):
         
 
         # Add widgets to middle layout
-        self.log.debug("Adding widgets to middle layout")
-        middle_layout.addWidget(self.thermistor_plot_widget, 2)     # Add the thermistor plot widget to the right layout
-        middle_layout.addWidget(self.flow_sensor_plot_widget, 2)    # Add the flow sensor plot widget to the right layout
+        middle_layout.addWidget(self.plot_widget)
+        #self.log.debug("Adding widgets to middle layout")
+        #middle_layout.addWidget(self.thermistor_plot_widget, 2)     # Add the thermistor plot widget to the right layout
+        #middle_layout.addWidget(self.flow_sensor_plot_widget, 2)    # Add the flow sensor plot widget to the right layout
         
         # Add widgets to right layout
         self.log.debug("Adding widgets to right layout")
@@ -486,9 +562,9 @@ class MainWindow(QMainWindow):
             elif isinstance(left_layout.itemAt(i).widget(), QPushButton):
                 left_layout.itemAt(i).widget().setStyleSheet(button_style)
             left_layout.setStretch(i, 2)                               # Set the stretch of each slider in the left layout to 1
-        middle_layout.setAlignment(Qt.AlignCenter)                     # Align the middle layout to the top of the window
-        middle_layout.setStretch(0, 1)                                 # Set the stretch of the thermistor plot to 1
-        middle_layout.setStretch(1, 1)                                 # Set the stretch of the flow sensor plot to 1
+        #middle_layout.setAlignment(Qt.AlignCenter)                     # Align the middle layout to the top of the window
+        #middle_layout.setStretch(0, 1)                                 # Set the stretch of the thermistor plot to 1
+        #middle_layout.setStretch(1, 1)                                 # Set the stretch of the flow sensor plot to 1
         right_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)    # Align the right layout be evenly distributed in layout center
         right_layout.setContentsMargins(side_margin, top_btm_margin, side_margin, top_btm_margin)
         for i in range(right_layout.count()):
@@ -567,26 +643,15 @@ class MainWindow(QMainWindow):
         # Connect the signals for the emergency stop button
         self.emergency_stop_button.clicked.connect(self.emergency_stop)
         
-        # # Create timer for the animation widget
-        # self.mesh_animation_timer = QTimer(self)
-        # self.current_frame_number = 0       # Start the count at 1
-        # self.start_of_animation = True
-        # self.mesh_animation_timer.timeout.connect(self.update_mesh_animation)
-        # self.mesh_timer_interval = self.mesh_frame_generator.animation_length_ms/self.mesh_frame_generator.animation_steps
-        # self.mesh_animation_timer.start(self.mesh_timer_interval)
-           
-        # # Populate the matplotlib plots
-        # self.update_point_plot()
-        # self.update_avg_point_plot()
-        # self.update_freq_slider_label(self.freq_slider.value())
-        # self.update_point_slider_label(self.point_slider.point_number)
-        # self.stop_timer()
-        # self.regenerate_mesh_and_point_frames()
-        # self.update_color_bar()
-        # self.start_timer()
-        # self.ready_to_record = True
-        
+        # Initialize all slider elements to initial values for label updates
         self.init_update_all_slider_elements()
+        
+        # Create timer for the plotting and run it
+        self.plot_timer = QTimer(self)
+        self.plot_timer.timeout.connect(self.update_plots_from_teensy_input_data)
+        self.plot_timer.start(200)
+        
+        
         
         
         
@@ -610,32 +675,101 @@ class MainWindow(QMainWindow):
     def update_elements_from_teensy_input_data(self):
         """Updates the GUI elements from the latest Teensy input data, not necessarily when Teensy data is received and stored"""
         self.log.debug("Updating GUI elements from latest Teensy input data")
-        last_io_count = self.input_data.io_count
         
-        self.update_piezo_1_freq_slider_value(self.input_data.piezo_1_freq_hz[last_io_count])
-        self.update_piezo_1_amp_slider_value(self.input_data.piezo_1_amp_v[last_io_count])
-        self.update_piezo_1_phase_slider_value(self.input_data.piezo_1_phase_deg[last_io_count])
+        self.update_piezo_1_freq_slider_value(self.input_data.piezo_1_freq_hz)
+        self.update_piezo_1_amp_slider_value(self.input_data.piezo_1_vpp)
+        self.update_piezo_1_phase_slider_value(self.input_data.piezo_1_phase_deg)
         
-        self.update_piezo_2_freq_slider_value(self.input_data.piezo_2_freq_hz[last_io_count])
-        self.update_piezo_2_amp_slider_value(self.input_data.piezo_2_amp_v[last_io_count])
-        self.update_piezo_2_phase_slider_value(self.input_data.piezo_2_phase_deg[last_io_count])
+        self.update_piezo_2_freq_slider_value(self.input_data.piezo_2_freq_hz)
+        self.update_piezo_2_amp_slider_value(self.input_data.piezo_2_vpp)
+        self.update_piezo_2_phase_slider_value(self.input_data.piezo_2_phase_deg)
         
-        self.update_rope_temp_slider_value(self.input_data.inlet_fluid_temp_c[last_io_count])
-        self.update_heat_flux_slider_value(self.input_data.heat_flux_w_per_m2[last_io_count])
+        self.update_rope_temp_slider_value(self.input_data.inlet_fluid_temp_c)
+        self.update_heat_flux_slider_value(self.input_data.heat_flux_w_per_m2)
         
-        self.update_heater_block_temp_guage_value(self.input_data.heat_block_temp_c[last_io_count])
+        self.update_heater_block_temp_guage_value(self.input_data.heat_block_temp_c)
         
-        self.update_piezo_1_enable_button(self.input_data.piezo_1_enabled[last_io_count])
-        self.update_piezo_2_enable_button(self.input_data.piezo_2_enabled[last_io_count])
-        self.update_rope_enable_button(self.input_data.rope_heater_enable[last_io_count])
-        self.update_heater_block_enable_button(self.input_data.heater_block_enable[last_io_count])
+        self.update_piezo_1_enable_button(self.input_data.piezo_1_enable)
+        self.update_piezo_2_enable_button(self.input_data.piezo_2_enable)
+        self.update_rope_enable_button(self.input_data.rope_heater_enable)
+        self.update_heater_block_enable_button(self.input_data.heater_block_enable)
         
         #self.update_send_data_button(self.teensy_input_data.send_data)
         #self.update_emergency_stop_button(self.teensy_input_data.emergency_stop)    
         
     def update_plots_from_teensy_input_data(self):
-        """Updates the plots from the latest Teensy input data, not necessarily when Teensy data is received and stored"""
-        pass
+        """Updates the plots from the latest Teensy input data, not necessarily when Teensy data is received and stored
+        This function is asyncronous and should be called from a separate thread"""
+        # Need to use the self.input_data onject to grab the most recent data
+        # First check to see if the data has changed since the last update
+        
+        if not (self.last_io_count == self.input_data.io_count):
+            self.log.debug("Updating plots from latest Teensy input data")
+            
+            # Get the time of the latest data
+            self.time_data[:-1] = self.time_data[1:]                            # shift the time data in the array one sample left
+            self.time_data[-1] = np.round(self.input_data.time_ms/1000, 3)      # add the latest time data to the end of the array, this is in seconds
+            
+            # Get the min and max value of the time for updating the X limits of the plots
+            if self.time_data[-1]-self.time_data[0] > self.plot_x_time_limit:
+                min_time = self.time_data[-1]-self.plot_x_time_limit
+                max_time = self.time_data[-1]
+            else:
+                min_time = self.time_data[0]
+                max_time = min_time + self.plot_x_time_limit
+            max_time += 2    # Add some seconds to the max time to give some padding at the end of the plot
+                
+            # Update the x limits of the plots
+            self.thermistor_plot.setXRange(min_time, max_time, padding=0.0)
+            self.flow_sensor_plot.setXRange(min_time, max_time, padding=0.0)
+            self.log.debug("Updated plot x limits to: " + str(min_time) + " to " + str(max_time))
+                
+
+            # For each curve in self.thermistor_curves, update the data in self.thermistor_data given the latest Teensy input data
+            thermistor_temps = [self.input_data.thermistor_1_temp_c,
+                                self.input_data.thermistor_2_temp_c,
+                                self.input_data.thermistor_3_temp_c,
+                                self.input_data.thermistor_4_temp_c,
+                                self.input_data.thermistor_5_temp_c,
+                                self.input_data.thermistor_6_temp_c,
+                                self.input_data.thermistor_7_temp_c,
+                                self.input_data.thermistor_8_temp_c,
+                                self.input_data.thermistor_9_temp_c,
+                                self.input_data.thermistor_10_temp_c,
+                                self.input_data.thermistor_11_temp_c,
+                                self.input_data.thermistor_12_temp_c]
+            for curve_num in range(len(self.thermistor_curves)):
+                self.thermistor_data[curve_num][:-1] = self.thermistor_data[curve_num][1:]      # Shift data in the array one sample left
+                self.thermistor_data[curve_num][-1] = thermistor_temps[curve_num]                          # Add latest data to the end of the array
+                curve = self.thermistor_curves[curve_num]
+                #self.log.debug(f"Shape of time data: {self.time_data.shape}")
+                #self.log.debug(f"Shape of thermistor data: {self.thermistor_data[:][curve_num].shape}")
+                curve.setData(self.time_data, self.thermistor_data[curve_num][:])
+                
+            # Update the y limits of ALL of the thermistor curves on the plot
+            min_y = np.min(self.thermistor_data)
+            max_y = np.max(self.thermistor_data)
+            self.thermistor_plot.setYRange(min_y, max_y, padding=5.0)
+            self.log.debug("Updated thermistor plot y limits to: " + str(min_y) + " to " + str(max_y))
+                
+            # For each curve in self.flow_sensor_curves, update the data in self.flow_sensor_data given the latest Teensy input data
+            flow_rates = [self.input_data.inlet_flow_sensor_ml_min,
+                            self.input_data.outlet_flow_sensor_ml_min]
+            print(flow_rates)
+            for curve_num in range(len(self.flow_sensor_curves)):
+                self.flow_sensor_data[curve_num][:-1] = self.flow_sensor_data[curve_num][1:]
+                self.flow_sensor_data[curve_num][-1] = flow_rates[curve_num]
+                curve = self.flow_sensor_curves[curve_num]
+                curve.setData(self.time_data, self.flow_sensor_data[curve_num][:])
+                
+            # Update the y limits of the flow sensor plot
+            min_y = np.min(self.flow_sensor_data)
+            max_y = np.max(self.flow_sensor_data)
+            self.flow_sensor_plot.setYRange(min_y, max_y, padding=5.0)
+            self.log.debug("Updated flow sensor plot y limits to: " + str(min_y) + " to " + str(max_y))
+                
+        # Update the last IO count
+        self.last_io_count = self.input_data.io_count
         
     """ Update the element labels """
     def update_piezo_1_freq_slider_label(self, value):
@@ -737,22 +871,33 @@ class MainWindow(QMainWindow):
         #self.log.info(f"Heat flux enable button update, state: {state}")
         
     """ Button callbacks """
-    def send_data(self):
+    async def send_data(self):
         self.send_data_button.setEnabled(False)
         self.send_data_button.setText("Sending Data...")
         self.log.info("Sending data to the teensy")
         self.log.debug("PUT SERIAL STRING HERE")
         ################# SEND THE DATA TO SERIAL CONNECTION #################
+        # Go through each variable in the output data struct and set the value given the value in the GUI
+        self.update_output_ETdata_object()     
+        await self.ET.send_data()
         
         self.send_data_button.setText("Send Data")
         self.send_data_button.setEnabled(True)
         
-    def emergency_stop(self):
+    async def emergency_stop(self):
         self.disable_all_elements()
         self.emergency_stop_button.setEnabled(False)
         self.emergency_stop_button.setText("Stopping...")
         self.log.error("Emergency stop")
         ################# SEND THE DATA TO SERIAL CONNECTION #################
+        # Set all values to zero or False in the output
+        for variable, _dtype in self.output_data.struct_def.items():
+            if _dtype == np.bool_:
+                setattr(self, variable, False)
+            else:
+                setattr(self, variable, 0)
+        await self.ET.send_data()
+        
         self.emergency_stop_button.setText("Emergency Stop")
         self.emergency_stop_button.setEnabled(True)
         
@@ -791,23 +936,26 @@ class MainWindow(QMainWindow):
         # Re-enable the emergency stop button
         self.emergency_stop_button.setEnabled(True)
             
-    def update_output_iodata_object(self):
+    def update_output_ETdata_object(self):
         """ Write the output iodata object to the output queue before sending to the serial connection """
-        self.output_data = data_transfer.IOData(1)      # Reset the output data object
-        self.output_data.piezo_1_freq_hz = np.uint32(self.piezo_1_freq_slider.value())
-        self.output_data.piezo_1_amp_v = np.uint32(self.piezo_1_amp_slider.value())
+        self.output_data.heater_block_enable = self.heater_block_enable_button.isChecked()
+        self.output_data.rope_heater_enable = self.rope_enable_button.isChecked()
+        self.output_data.piezo_1_enable = self.piezo_1_enable_button.isChecked()
+        self.output_data.piezo_2_enable = self.piezo_2_enable_button.isChecked()
+        self.output_data.piezo_1_freq_hz = self.piezo_1_freq_slider.value()
+        self.output_data.piezo_1_vpp = self.piezo_1_amp_slider.value()
+        self.output_data.piezo_1_phase_deg = self.piezo_1_phase_slider.value()
+        self.output_data.piezo_2_freq_hz = self.piezo_2_freq_slider.value()
+        self.output_data.piezo_2_vpp = self.piezo_2_amp_slider.value()
+        self.output_data.piezo_2_phase_deg = self.piezo_2_phase_slider.value()
+        self.output_data.heat_flux = self.heat_flux_slider.value()   
   
     """ Timer methods """      
     def stop_timer(self):
         pass
-        #self.camera_view = self.mesh_animation_visualizer.get_view_control().convert_to_pinhole_camera_parameters()
-        #self.mesh_animation_timer.stop()
         
     def start_timer(self):
         pass
-        #self.mesh_animation_timer.start(self.mesh_timer_interval)
-        #self.mesh_animation_visualizer.get_view_control().convert_from_pinhole_camera_parameters(self.camera_view)
-        
    
     # """Update the point plot canvas when the frequency slider or point slider is modified"""
     # def update_point_plot(self):

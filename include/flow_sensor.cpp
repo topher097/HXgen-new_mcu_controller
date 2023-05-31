@@ -27,6 +27,7 @@ void FlowSensor::soft_reset(){
 		}
 	} while (ret != 0);
 	delay(50); // wait long enough for chip reset to complete
+
 }
 
 void FlowSensor::set_continuous_mode(){
@@ -35,13 +36,16 @@ void FlowSensor::set_continuous_mode(){
 	// measurement mode (H20 calibration), then read 3x (2 bytes + 1 CRC byte) from the sensor.
 	// To perform a IPA based measurement, send 0x3615 instead.
 	// Check datasheet for available measurement commands.
-	_wire->beginTransmission(FLOW_SENSOR_ADDRESS);
-	_wire->write(MEASUREMENT_MODE_B1);
-	_wire->write(MEASUREMENT_MODE_B2);
-	ret = _wire->endTransmission();
-	if (ret != 0) {
-		Serial.print("Error during write measurement mode command for the "); Serial.print(sensor_name); Serial.print(" sensor, retrying...\n");
-	}
+	do {
+		_wire->beginTransmission(FLOW_SENSOR_ADDRESS);
+		_wire->write(MEASUREMENT_MODE_B1);
+		_wire->write(MEASUREMENT_MODE_B2);
+		ret = _wire->endTransmission();
+		if (ret != 0) {
+			Serial.print(ret); Serial.print(", Error during write measurement mode command for the "); Serial.print(sensor_name); Serial.print(" sensor, retrying...\n");
+			delay(50);
+		}
+	} while (ret != 0);
 }
 
 
