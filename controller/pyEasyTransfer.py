@@ -1,13 +1,15 @@
 import asyncio
 import logging
 from math import e
-import struct
+import time
 import numpy as np
 from struct import Struct
-from typing import Optional
+from typing import Optional, Any
 import serial_asyncio
 from ETData import ETData, ETDataArrays
-
+import pickle
+import os
+from datetime import datetime
 
 BYTE_FORMATS = {
     'little-endian': '<',
@@ -18,7 +20,16 @@ BYTE_FORMATS = {
 }
 
 
-def numpy_dtype_to_struct_format(dtype):
+def numpy_dtype_to_struct_format(dtype: np.dtype) -> str:
+    """Given a numpy dtype, return the corresponding struct format character
+    
+    Args:
+        dtype: np.dtype
+            The numpy dtype to convert
+            
+    Returns:
+        struct_format_character: str
+    """
     if dtype == np.uint8:
         return 'B'
     elif dtype == np.uint16:
@@ -38,38 +49,117 @@ def numpy_dtype_to_struct_format(dtype):
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
 
-
-def create_struct_format(byte_order, struct_def):
-    struct_format = byte_order
-    for name, dtype in struct_def.items():
+def create_struct_format(byte_format: str, struct_def: dict[str, np.dtype]) -> str:
+    """Given a byte order and a struct definition, return the corresponding struct format string 
+    
+    Args:
+        byte_format: str
+            The byte order to use. Must be one of 'little-endian', 'big-endian', 'network', 'native', or 'little-endian-no-alignment'
+        struct_def: dict[str, np.dtype]
+            The struct definition to use. Must be a dictionary of {field_name: dtype} pairs.
+    
+    Returns:
+        struct_format: str
+    """
+    byte_order = BYTE_FORMATS[byte_format]      # Get the byte order character
+    struct_format = byte_order                  # Init with the byte order character
+    for _, dtype in struct_def.items():
         struct_format += numpy_dtype_to_struct_format(dtype)
     return struct_format
 
-def calculate_checksum(*byte_data: bytes, byte_order: str, footer_dtype: np.dtype) -> int:  
-    """Calculates the checksum of the given bytes, according to the given byte order and footer data type."""
-    checksum = 0
-    for byte in byte_data:
-        checksum += int.from_bytes(byte, byteorder=byte_order)
-    checksum = checksum % (2 ** (8 * footer_dtype.itemsize))
-    return checksum
+def data_to_bytes(data: Any, format_string: str) -> bytes:
+    """Converts structured data to bytes according to the format string.
+    
+    Args:
+        data: Any
+            The data to convert to bytes. Can be any type that can be converted to a list.
+        format_string: str
+            The format string to use when converting the data to bytes, must be properly formatted for the data.
+    
+    Returns:
+        bytes
+    """
+    return Struct(format_string).pack(*data)
+
+def calculate_checksum(byte_data: bytes) -> tuple[np.uint8, np.uint8]:
+    """Calculates the checksum from byte data.
+    
+    Args:
+        byte_data: bytes
+            The data to calculate the checksum for.
+    
+    Returns:
+        [checksum: np.uint8, data_size: np.uint8]
+    """
+    size = np.uint8(len(byte_data))
+    checksum = size
+    for b in byte_data:
+        int_b = int(b)
+        checksum ^= int_b
+    checksum = np.uint8(checksum)   # Convert the checksum to a uint8
+    return checksum, size      
+
+def save_data_to_pickle_file(data: ETDataArrays, dir: str, filename: str=None) -> None:
+    """Save the current ETDataArrays object to a pickle file.
+
+    Args:
+        data: ETDataArrays
+            The ETDataArrays object to save to a pickle file
+        dir: str
+            The directory to save the pickle file to
+        filename: str
+            The filename to save the pickle file as. If None, the current time will be used with the name of the ETDataArrays object
+    """
+    if filename is None:
+        cur_time = datetime.now()
+        datetime_str = cur_time.strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"{data.name}_{datetime_str}.pkl"
+    file_path = os.path.join(dir, filename)
+    with open(file_path, 'wb') as f:
+        pickle.dump(data, f)
+        
+def load_data_from_pickle_file(dir: str, filename: str) -> ETDataArrays:
+    """Load the current ETDataArrays object from a pickle file.
+
+    Args:
+        file_path: str
+            The path to load the pickle file from
+
+    Returns:
+        data: ETDataArrays
+            The ETDataArrays object loaded from the pickle file
+    """
+    file_path = os.path.join(dir, filename)
+    with open(file_path, 'rb') as f:
+        data = pickle.load(f)
+    # Confirm it is a valid ETDataArrays object
+    if not isinstance(data, ETDataArrays):
+        raise TypeError(f"Loaded data is not of type ETDataArrays, it is of type {type(data)}")
+    return data
+        
 
 class PyEasyTransfer:
-    def __init__(self, log: logging.Logger, com_port: str, baud_rate: int,
+    def __init__(self, com_port: str, baud_rate: int,
                  input_struct_def: Optional[dict[str, np.dtype]] = None,
                  output_struct_def: Optional[dict[str, np.dtype]] = None,
-                 byte_order: str = 'little-endian', mode: str = 'both',
-                 save_read_data: Optional[ETDataArrays]=None):
+                 byte_format: str = 'little-endian', 
+                 mode: str = 'both',
+                 save_read_data: Optional[ETDataArrays]=None,
+                 log: logging.Logger=None,
+                 name: str='PyEasyTransfer object'):
 
         if mode not in ['input', 'output', 'both']:
             raise ValueError("Invalid mode. Mode must be one of 'input', 'output', 'both'")
 
         self.data_received_event = asyncio.Event()           # Event to indicate when data has been received
         self.buffer = bytearray()                            # Buffer to store the data received over the serial connection
-        self.log = log                                       # Logger object for logging events                            
+        self.log = log                                       # Logger object for logging events, can init as None and be set later                         
         self.com_port = com_port                             # COM port to connect to
         self.baud_rate = baud_rate                           # Baud rate to connect at
         self.mode = mode                                     # The mode for this PyEasyTransfer instance
-        self.byte_order = BYTE_FORMATS[byte_order]           # Byte order to use when packing and unpacking data
+        self.byte_format = byte_format                       # The byte format to use when packing and unpacking data
+        self.byte_order = BYTE_FORMATS[byte_format]          # Byte order character to use when packing and unpacking data
+        self.name = name
         
         # Create the header, size, and checksum formats
         self.header_bytes = bytearray([0x06, 0x85])          # Header bytes to look for when receiving data
@@ -88,27 +178,36 @@ class PyEasyTransfer:
         if self.mode in ['input', 'both']:
             if not input_struct_def:
                 raise ValueError("An input_struct_def must be provided when mode is 'input' or 'both'.")
-            self.read_data = ETData(input_struct_def)           # Read from this to get the data from the Arduino
+            self.read_data = ETData(input_struct_def, name=name)           # Read from this to get the data from the Arduino
             self.buffer_size = self.read_data.struct_bytes      # Size of the buffer in bytes
 
         if self.mode in ['output', 'both']:
             if not output_struct_def:
                 raise ValueError("An output_struct_def must be provided when mode is 'output' or 'both'.")
-            self.write_data = ETData(output_struct_def)         # Write to this to send data to the Arduino
+            self.write_data = ETData(output_struct_def, name=name)         # Write to this to send data to the Arduino
 
         self.save_read_data = save_read_data    # This is the ETDataArrays object which is used to store the data. If this is not initialized then the data will not be stored
-        self.start_buffering = False            # Flag to indicate when to start buffering data
+        self.start_saving_data = False          # This is used to indicate when to start saving data
 
         if self.mode in ['input', 'both']:
-            self.struct_format_read = create_struct_format(self.byte_order, self.read_data.struct_def)
+            self.struct_format_read = create_struct_format(self.byte_format, self.read_data.struct_def)
         if self.mode in ['output', 'both']:
-            self.struct_format_write = create_struct_format(self.byte_order, self.write_data.struct_def)
+            self.struct_format_write = create_struct_format(self.byte_format, self.write_data.struct_def)
 
-        #print(f"Struct format read: {self.struct_format_read}")
-        #print(f"Struct format write: {self.struct_format_write}")
+    def set_log(self, log: logging.Logger):
+        """Set the log object for this PyEasyTransfer instance."""
+        self.log = log
+        
+    def start_saving(self, start_saving_data: bool = True):
+        """Start saving data to the given ETDataArrays object."""
+        self.start_saving_data = start_saving_data
+        
+    def stop_saving(self, stop_saving_data: bool = True):
+        """Stop saving data to the given ETDataArrays object."""
+        self.start_saving_data = not stop_saving_data
 
     async def open(self):
-        """Open the serial connection, if the """
+        """Open the serial connection"""
         loop = asyncio.get_running_loop()
         if self.mode in ['input', 'both']:
             self._transport, self.reader = await serial_asyncio.create_serial_connection(loop, EasyTransferReceiver, self.com_port, baudrate=self.baud_rate)
@@ -117,39 +216,29 @@ class PyEasyTransfer:
             self.writer = self._transport
 
     async def close(self):
+        """Close the serial connection"""
         if self._transport:
             self._transport.close()
             await self._transport._closing
-            
-    @staticmethod
-    def data_to_bytes(data, format_string: str) -> bytes:
-        """Converts structured data to bytes according to the format string."""
-        return Struct(format_string).pack(*data)
-
-    @staticmethod
-    def calculate_checksum(byte_data: bytes, byte_order: str, footer_dtype: np.dtype) -> np.uint8:
-        """Calculates the checksum from byte data."""
-        checksum = len(byte_data)
-        for b in byte_data:
-            int_b = int(b)
-            checksum ^= int_b
-        return np.uint8(checksum)      
         
-
     async def send_data(self):
+        """Send the data to the serial connection"""
         if self.mode in ['both', 'output']:
             # Get the data from the write_data object
             data = [getattr(self.write_data, key) for key in self.write_data.struct_def.keys()]
 
-            # Get the size of the data
-            packed_data = PyEasyTransfer.data_to_bytes(data, self.struct_format_write)
-            packed_data_size = np.uint8(len(packed_data))
- 
-            # Calculate the checksum
-            checksum = packed_data_size
-            for byte in packed_data: 
-                byte = int(byte)        # Convert the byte to an integer
-                checksum ^= byte        # XOR the byte with the checksum
+            # Check the data has the write dtype
+            for i, (key, dtype) in enumerate(self.write_data.struct_def.items()):
+                if type(data[i]) != dtype:
+                    if type(data[i]) == bool:
+                        # If bool then set to np.bool_
+                        setattr(self.write_data, key, np.bool_(data[i]))
+                    else:
+                        raise TypeError(f"'{self.name}': Data type for {key} is {type(data[i])}, but should be {dtype}")
+
+            # Get the packed data and calculate the checksum
+            packed_data = data_to_bytes(data, self.struct_format_write)
+            checksum, packed_data_size = calculate_checksum(packed_data)
                 
             # Create the format string for the header and footer
             full_format = self.byte_order + self.header_format + self.size_format + self.struct_format_write.replace(self.byte_order, "") + self.footer_format
@@ -157,12 +246,13 @@ class PyEasyTransfer:
             # Pack the data into a byte array and send it
             byte_data_with_checksum = Struct(full_format).pack(self.header_bytes[0], self.header_bytes[1], packed_data_size, *data, checksum)
             self.writer.write(byte_data_with_checksum)
-            await asyncio.sleep(0)  # yield control to the event loop
-            self.log.info(f"Sent data: {data}. Checksum sent: {checksum}")
+            await asyncio.sleep(0)          # yield control to the event loop
+            self.log.debug(f"Sent data: {data}. Checksum sent: {checksum}")
         else:
             raise ValueError("The PyEasyTransfer object is not in output mode. Data sending is not allowed.")
 
     async def listen(self):
+        """Continuously listen to the COM port"""
         if self.mode in ['both', 'input']:
             while True:
                 await self.wait_for_data()
@@ -170,6 +260,7 @@ class PyEasyTransfer:
             raise ValueError("The PyEasyTransfer object is not in input mode. Listening is not allowed.")
 
     async def wait_for_data(self):
+        """Wait for data via listening to the COM port"""
         if self.mode in ['both', 'input']:
             await self.data_received_event.wait()
         else:
@@ -177,30 +268,45 @@ class PyEasyTransfer:
 
     def save_data_recevied(self):
         """Save the current read_data ETData object to the ETDataArrays object."""
-        ioc = self.save_read_data.io_count
-        if self.save_read_data.max_elements > 0 and ioc <= self.save_read_data.max_elements:
-            keys = list(self.read_data.struct_def.keys())
-            for i in range(len(keys)):
-                key = keys[i]
+        io_count = self.save_read_data.io_count
+        if self.save_read_data.max_elements > 0 and io_count <= self.save_read_data.max_elements:
+            #keys = list(self.read_data.struct_def.keys())
+            for key in self.read_data.struct_def.keys():
+                #key = keys[i]
                 value = getattr(self.read_data, key)
-                getattr(self.save_read_data, key)[ioc] = value
+                getattr(self.save_read_data, key)[io_count] = value
             self.save_read_data.io_count += 1
-            self.log.debug(f"Saved data to the ETDataArrays object. IO count: {ioc}.")
+            if io_count % 100 == 0:
+                self.log.debug(f"Saved data to the ETDataArrays object for '{self.name}'. IO count: {io_count}.")
         else:
-            self.log.error(f"Could not save data to the ETDataArrays object. IO count: {ioc}, Max element count: {self.save_read_data.max_elements}.")
-            
-
+            self.start_saving_data = False      # Flip flag due to max elements reached
+            self.log.error(f"Could not save data to the ETDataArrays object because the max element count has been reached. Stopping data collection.")
+    
+    @staticmethod
+    def format_unpacked_data_for_printing(unpacked_data: tuple[Any]) -> str:
+        """Format the unpacked data for printing."""
+        string = ""
+        for ele in unpacked_data:
+            if isinstance(ele, float):
+                string += f"{np.format_float_positional(ele, 3)}, "
+            else:
+                string += f"{ele}, "
+        return string[:-2]      # Remove the last comma and space  
+    
     def data_received(self, packet: bytes):
+        """Data received from the COM port, unpack it and store it in the read_data object."""
         if self.mode in ['both', 'input']:
             # Unpack the data into the read_data object
             unpacked_data = Struct(self.struct_format_read).unpack(bytes(packet))
-            #print(unpacked_data)
+            # Set the data in the read_data object
             for key, value in zip(self.read_data.struct_def.keys(), unpacked_data):
                 setattr(self.read_data, key, value)
-            self.read_data.io_count += 1
-            self.log.info(f"Received data: {unpacked_data}.")
+            self.read_data.io_count += 1    # Increment the io count
+            if self.read_data.io_count % 100 == 0:
+                self.log.debug(f"'{self.name}': Received data: [{PyEasyTransfer.format_unpacked_data_for_printing(unpacked_data)}], io_count: {self.read_data.io_count}")
+            #self.log.debug(f"Received data: {unpacked_data}. Checksum received: {unpacked_data[-1]}, io_count: {self.read_data.io_count}")
             # If there is a save data object, then save the data
-            if self.save_read_data:
+            if self.save_read_data and self.start_saving_data:
                 self.save_data_recevied()
         else:
             raise ValueError("The PyEasyTransfer object is not in input mode. Data receiving is not allowed.")
@@ -212,11 +318,11 @@ class EasyTransferReceiver(asyncio.Protocol):
         self.pyeasytransfer: PyEasyTransfer = None
         self.buffer = bytearray()
 
-    def connection_made(self, transport):
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Method called when the serial connection is made. This method is called by the asyncio loop and should not be called directly."""
         self.transport: asyncio.BaseTransport = transport
 
-    def data_received(self, data):
+    def data_received(self, data: bytes) -> None:
         """Protocol for receiving data from the serial port. Once data is received, it is added to the buffer and then the buffer is checked for a complete packet.
         Once a complete packet is found, the packet is sent PyEasyTransfer object for unpacking and processing.
         """
@@ -254,10 +360,11 @@ class EasyTransferReceiver(asyncio.Protocol):
             self.buffer = self.buffer[end_index:]
 
             # Compute the expected checksum, note, each item is a byte in the packet, packet_size is the number of bytes in the packet as a byte
-            expected_checksum = packet_size
-            for item in packet:
-                item = int(item)
-                expected_checksum ^= item
+            # expected_checksum = packet_size
+            # for item in packet:
+            #     item = int(item)
+            #     expected_checksum ^= item
+            expected_checksum, _ = calculate_checksum(packet)
 
             # If the checksums match, pass the packet to PyEasyTransfer
             if expected_checksum == received_checksum:
@@ -269,15 +376,15 @@ class EasyTransferReceiver(asyncio.Protocol):
             index = self.buffer.find(self.pyeasytransfer.header_bytes)
 
 
-def get_data_struct_size(struct_def: dict):
+def get_data_struct_size_from_struct_def(struct_def: dict[str, np.dtype]) -> int:
+    """Given a struct definition, return the size of the struct in bytes."""
     struct_format = ''
     for _, value in struct_def.items():
-        #print(value)
         struct_format += numpy_dtype_to_struct_format(value)
     return Struct(struct_format).size
 
 
-import time
+
 async def test_both_in_out(com_port: str, baud_rate: int):
     # Input data from the serial connection struct definition, exactly as defined in the Arduino code
     input_struct_def = {"time_ms": np.uint32,

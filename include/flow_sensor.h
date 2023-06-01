@@ -10,40 +10,35 @@
 #pragma once
 #include <Arduino.h>		// Arduino library for Arduino specific function
 #include <Wire.h>
-//#include <SoftwareWire.h>
 #include <config.h>			// Include the config.h header file
-//#include <i2c_driver_wire.h>	// Include the i2c_driver_wire header file
-
-
 
 
 // Flow Sensor class
 class FlowSensor {
 public:
+	FlowSensor(const String &name, TwoWire *wire): 
+				sensor_name(name), _wire(wire){};
+	
 	void begin( void );
-	//void printStatus(Print& Ser);
 	void soft_reset( void );
 	void measure_flow( void );
 	void calibrate_flow( void );
 	void set_continuous_mode( void );
+	float get_flowrate( void );
 
-	//FlowSensor(const String &name, const int _sdaPin, const int _sclPin): sensor_name(name), _wire(_sdaPin, _sclPin){};
-	// FlowSensor(const String &name, SoftwareWire *wire): 
-	// 			sensor_name(name), _wire(wire){};
-	FlowSensor(const String &name, TwoWire *wire): 
-				sensor_name(name), _wire(wire){};
 	~FlowSensor(){};
 
+
+	// Getter methods
 	String get_name() const { 
 		return sensor_name; 
 	}
 
-	// SoftwareWire *get_bus() const { 
-	// 	return _wire; 
-	// }
-	
+	TwoWire *get_bus() const { 
+		return _wire; 
+	}	
 
-	volatile float scaled_flow_value = 0;	
+	volatile float scaled_flow_value = 0;	// This is the value of the flow rate in mL/min (signed and scaled)
 	
 private:
 	volatile int ret;

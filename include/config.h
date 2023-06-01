@@ -63,29 +63,14 @@ uint16_t heat_flux_pwm;
 // Measurement delay time (for flow sensors, valve position, valve diff pressure), and update delay time for digital output
 const int measurement_update_delay_ms = 100;    // Delay between measurements and update output in ms
 
-// Screen settings
-const int screen_touch_resistance = 268;  // ohms b/w +X and -X pins (for pressure)
-const int16_t touchXMin = 875;            // Min value of X touch reading
-const int16_t touchXMax = 215;            // Max value of X touch reading
-const int16_t touchYMin = 330;            // Min value of Y touch reading
-const int16_t touchYMax = 800;            // Max value of Y touch reading
-const int16_t min_pressure = 50;          // Minimum pressure to register a touch
-const int16_t max_pressure = 300;         // Maximum pressure to register a touch
-const int SCREEN_WIDTH = 480;             // screen width in pixels
-const int SCREEN_HEIGHT = 320;            // screen height in pixels
-const int SCREEN_ROTATION = 3;            // screen rotation in degrees
-const int SCREEN_BRIGHTNESS = 255;        // screen brightness, 0-255
-const int screen_update_delay_ms = 200;    // screen update delay in ms (about 5 fps)
-const int touch_pressure_min = 10;        // minimum touch pressure to register a touch
-
 // Serial communication settings
 bool print_to_serial = false;            // print to serial port
 const int SERIAL_BAUD = 115200;          // baud rate for serial communication
 bool wait_for_serial = false;            // wait for serial connection before starting program
-uint16_t send_data_delay_ms = 1000/50;      // delay between sending data over serial port in ms
+uint16_t measure_and_send_data_delay_ms = 1000/20;        // delay between sending data over serial port in ms
 
 // Analog (ADC) settings
-const int16_t analog_resolution = 10;                          // bits of resolution on ADC
+const int16_t analog_resolution = 10;                          // bits of resolution on ADC measurements
 const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
 const float analog_vref = 3.3;                                 // Analog reference voltage, 5.0V for ArduinoMega2560      
 
@@ -98,29 +83,24 @@ float min_temp = 0.0;              // deg C
 float max_temp = 100.0;            // deg C
 float min_heat_flux = 0.0;         // W/m^2
 
-// Data recording variables
-bool start_stop_recording = false;      // Start/stop recording data (shared between the mega and the monitor, set by start/stop button)
-
-// New data
-bool new_piezo_data = false;            // Flag for new piezo data
-
 // -----------------------------------------------------------------------------
 // Piezo variables
 // -----------------------------------------------------------------------------
+uint8_t signal_type_piezo_1 = 0;    // 0 = sine, 1 = sawtooth, 2 = square, 3 = triangle, 4 = noise, 5 = sweep. Note the first 4 are defined as such in synth_waveform.h
+uint8_t signal_type_piezo_2 = 0;    // 0 = sine, 1 = sawtooth, 2 = square, 3 = triangle, 4 = noise, 5 = sweep. Note the first 4 are defined as such in synth_waveform.h
 float piezo_1_freq = 1000.0;        // Frequency of piezo 1 in Hz
 float piezo_2_freq = 1000.0;        // Frequency of piezo 2 in Hz
-float piezo_1_vpp  = 0.25;             // Voltage Peak-to-Peak of piezo 1 in V, amplitude is 0.5x this
-float piezo_2_vpp  = 0.25;             // Voltage Peak-to-Peak of piezo 2 in V, amplitude is 0.5x this
-float piezo_1_phase = 0.0;             // Phase of piezo 1 in radians
-float piezo_2_phase = 0.0;             // Phase of piezo 2 in radians
-bool piezo_1_enable = false;            // Enable/disable piezo 1
-bool piezo_2_enable = false;            // Enable/disable piezo 2
+float piezo_1_vpp  = 2.0;           // Voltage Peak-to-Peak of piezo 1 in V, this NEEDS to be divided by 100 for the amplifier
+float piezo_2_vpp  = 2.0;           // Voltage Peak-to-Peak of piezo 2 in V, this NEEDS to be divided by 100 for the amplifier
+float piezo_1_phase = 0.0;          // Phase of piezo 1 in degrees
+float piezo_2_phase = 0.0;          // Phase of piezo 2 in degrees
+bool piezo_1_enable = false;        // Enable/disable piezo 1
+bool piezo_2_enable = false;        // Enable/disable piezo 2
 
 
 // -----------------------------------------------------------------------------
 // Thermistor variables
 // -----------------------------------------------------------------------------
-const uint16_t analog_mega_max = 1024;              // Max analog resolution for the mega, 10 bits
 const uint16_t thermistor_R1 = 5100;               // ohms for the series resistor for the thermistors
 float thermistor_1_temp = 0.0;                      // Temperature of thermistor 1 in deg C, upper R1
 float thermistor_2_temp = 0.0;                      // Temperature of thermistor 2 in deg C, upper R1
@@ -152,8 +132,6 @@ float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
 
 // Function to get the resistance across the thermistor
 float calculate_thermistor_resistance(int analogReadValue, int maxAnalogRead, float referenceVoltage, int seriesResistor) {
-    //float voltageAcrossThermistor = (analogReadValue / float(maxAnalogRead)) * referenceVoltage;
-    //float thermistorResistance = seriesResistor * ((referenceVoltage / voltageAcrossThermistor) - 1.0);
     float thermistorResistance = seriesResistor / (maxAnalogRead / float(analogReadValue) - 1.0);
     return thermistorResistance;
 }
@@ -184,27 +162,5 @@ float convert_thermistor_analog_to_celcius(int analogReadValue, int maxAnalogRea
     float temperature = lookup_thermistor_temperature(resistance);
     return temperature;
 }
-
-
-// // Convert the flow rate from flow sensors
-// uint16_t ml_per_min_to_pwm_output(float flow_rate_ml_per_min) {
-//     // this equates to 2.55 ml/min per PWM output step
-//     return (uint16_t)(mapf(flow_rate_ml_per_min, min_flow_rate, max_flow_rate, min_pwm_output, max_pwm_output));
-// }
-
-// // Convert the temperature from the temperature sensor
-// uint16_t degC_to_pwm_output(float temp_deg_celcius) {
-//     // this equates to 0.255 degC per PWM output step
-//     return (uint16_t)(mapf(temp_deg_celcius, min_temp, max_temp, min_pwm_output, max_pwm_output));
-// }
-
-// // Convert the heat flux to a PWM output
-// uint16_t heat_flux_to_pwm_output(float heat_flux){
-//     // this equates to 51 mW/m^2 per PWM output step
-//     return (uint16_t)(mapf(heat_flux, min_heat_flux, max_heat_flux, min_pwm_output, max_pwm_output));
-// }
-
-
-
 
 #endif

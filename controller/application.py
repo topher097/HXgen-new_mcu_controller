@@ -2,75 +2,42 @@
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 """PySide6 port of the qt3d/simple-cpp example from Qt v5.x"""
-from logging import Logger
-from math import pi
-from turtle import left, up
-import matplotlib
+import logging
 
+import pyEasyTransfer
 from pyEasyTransfer import PyEasyTransfer
-matplotlib.use('Qt5Agg')
 
 import sys
 from enum import IntEnum, auto
 from dataclasses import dataclass
-from PySide6.QtCore import (Property, QObject, QPropertyAnimation, Signal, QEasingCurve, QSize, Qt, QTimer, Slot, QRect, QSize)
+from PySide6.QtCore import (QMutex, Qt, QTimer, Slot, QRect, QSize)
 from PySide6.QtGui import (QMatrix4x4, QQuaternion, QVector3D, QWindow, QFont)
 from PySide6.QtWidgets import (QMainWindow, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QTextEdit, QLayout, QLayoutItem, QTextBrowser, QWidgetItem)
 import pyqtgraph as pg
+import asyncio
+
 
 # Import custom Qt elements
 from application_elements import CentralWidget, MplCanvas, ListSlider, QLoggerStream
 
-# Need to import these after PySide6 for some reason
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
-from matplotlib.colors import ListedColormap
-from matplotlib.offsetbox import AnchoredText
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.animation as pltanim
 
 # Other imports
 import numpy as np
 from time import time
-import open3d as o3d
-import win32gui
-from scipy import ndimage
-from datetime import datetime
-import os
-from multiprocessing import Process
-from threading import Thread
 import qasync
-
-# Custom script imports
-# from borderlayout import *
-# import data_transfer
-# from serial_interface import SerialInterface
-
-
-# from utils import get_nearest_freq_index, get_point_object
-
-THEMES = ["Qt", "Primary Colors", "Digia", "Stone Moss", "Army Blue", "Retro",
-          "Ebony", "Isabelle"]
-
-viridis = mpl.colormaps['viridis'].resampled(8)
-
-
-
-
 
 """ These are the limits to sliders and other variables """
 # -------------------- Piezo attributes --------------------
 # Frequency
-piezo_min_freq = 10
+piezo_min_freq = 150
 piezo_max_freq = 5000
 piezo_freq_step = 5
 piezo_default_freq = 500
 # Amplitude
-piezo_min_amp = 0.0
-piezo_max_amp = 50.0
-piezo_amp_step = 0.5
-piezo_default_amp = 5.0
+piezo_min_vpp = 0.0
+piezo_max_vpp = 120.0
+piezo_vpp_step = 1
+piezo_default_vpp = 5.0
 # Phase
 piezo_min_phase = 0.0
 piezo_max_phase = 360.0
@@ -95,6 +62,7 @@ Heater_block_max_temp = 160     # If this is ever reached, the heater block shou
 heat_flux_min = 0
 heat_flux_max = 30
 heat_flux_step = 0.1
+heat_flux_default = 8
 heat_block_enable = False
 
 # -------------------- GUI attributes --------------------
@@ -106,23 +74,43 @@ min_width_slider = 30
     
 """Create the main window for the application"""
 class MainWindow(QMainWindow):
-    def __init__(self, window_title: str, loop: qasync.QEventLoop, log: Logger, serial_interface: PyEasyTransfer, 
-                 input_data_rate: int, test_time: int, *args, **kwargs):
+  
+    
+    def __init__(self, window_title: str, 
+                 loop: qasync.QEventLoop, 
+                 log: logging.Logger, 
+                 monitor_serial_interface: PyEasyTransfer,
+                 driver_serial_interface: PyEasyTransfer, 
+                 input_data_rate: int, 
+                 test_time: int, 
+                 *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
-        self.ET = serial_interface
         self.log = log      # Get the logger from the main application
         self.loop = loop
+        self.test_time = test_time
+        self.input_data_rate = input_data_rate
+        self.mutex = QMutex()
         
-        self.input_data = self.ET.read_data
-        self.output_data = self.ET.write_data
-        self.last_io_count = 0
+        # Setup the ET monitor
+        self.ET_monitor = monitor_serial_interface
+        self.monitor_input_data = self.ET_monitor.read_data
+        self.monitor_output_data = self.ET_monitor.write_data
+        self.last_io_count_monitor = 0
+        
+        # Setup the ET driver
+        self.ET_driver = driver_serial_interface
+        self.driver_input_data = self.ET_driver.read_data
+        self.driver_output_data = self.ET_driver.write_data
+        self.last_io_count_driver = 0
+        
+        self.emergency_stop = False
  
         # Initialize the main window
         self.log.info("Initializing application window")
         self.setWindowTitle(window_title)
         self.window_title = window_title
         self.setMinimumWidth(1800)
-        self.setMinimumHeight(1000)
+        self.setMinimumHeight(800)
         label_font = QFont()
         label_font.setBold(True)
         label_font.setPointSize(16)
@@ -134,7 +122,8 @@ class MainWindow(QMainWindow):
         
         # Set asyncio task to continiously read data
         self.log.info("Starting asyncio task to read data")
-        self.read_data_task = self.loop.create_task(self.ET.listen())
+        self.monitor_read_data_task = self.loop.create_task(self.ET_monitor.listen())
+        self.driver_read_data_task = self.loop.create_task(self.ET_driver.listen())
         
         # Button stype
         button_style =  """
@@ -183,14 +172,6 @@ class MainWindow(QMainWindow):
                                 border-radius: 3px;
                             }
                             """
-                                    
-        # style_file ="style.css"
-        # self.styles = None
-        # with open(style_file, "r") as fh:
-        #     self.styles = fh.read()
-        #     print("reading css")
-        #     print(self.styles)
-        # print(self.styles[0])
         
         # -------------------------------- LOGGER ELEMENT --------------------------------
         self.log_widget = QTextEdit()
@@ -219,7 +200,7 @@ class MainWindow(QMainWindow):
         piezo_1_freq_layout = QVBoxLayout()
         piezo_1_freq_layout.addWidget(self.piezo_1_freq_slider_label)
         piezo_1_freq_layout.addWidget(self.piezo_1_freq_slider)
-        piezo_1_freq_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_1_freq_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         #piezo_1_freq_layout.setStretch(0, 0)
         self.piezo_1_freq_widget = CentralWidget()
         self.piezo_1_freq_widget.setLayout(piezo_1_freq_layout)
@@ -227,16 +208,16 @@ class MainWindow(QMainWindow):
         
         # Create a slider for the amplitude of the piezo 1
         self.piezo_1_amp_slider = QSlider(Qt.Horizontal, self)
-        self.piezo_1_amp_slider.setMinimum(piezo_min_amp)
-        self.piezo_1_amp_slider.setMaximum(piezo_max_amp)
-        self.piezo_1_amp_slider.setTickInterval(piezo_amp_step)
-        self.piezo_1_amp_slider.setValue(piezo_default_amp)
+        self.piezo_1_amp_slider.setMinimum(piezo_min_vpp)
+        self.piezo_1_amp_slider.setMaximum(piezo_max_vpp)
+        self.piezo_1_amp_slider.setTickInterval(piezo_vpp_step)
+        self.piezo_1_amp_slider.setValue(piezo_default_vpp)
         self.piezo_1_amp_slider.setEnabled(True)
-        self.piezo_1_amp_slider_label = QLabel(f"Amplitude: {self.piezo_1_amp_slider.value} (V)", self)
+        self.piezo_1_amp_slider_label = QLabel(f"Amplitude: {self.piezo_1_amp_slider.value} (V p-p)", self)
         piezo_1_amp_layout = QVBoxLayout()
         piezo_1_amp_layout.addWidget(self.piezo_1_amp_slider_label)
         piezo_1_amp_layout.addWidget(self.piezo_1_amp_slider)
-        piezo_1_amp_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_1_amp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         #piezo_1_amp_layout.setStretch(0, 0)
         self.piezo_1_amp_widget = CentralWidget()
         self.piezo_1_amp_widget.setLayout(piezo_1_amp_layout)
@@ -252,7 +233,7 @@ class MainWindow(QMainWindow):
         piezo_1_phase_layout = QVBoxLayout()
         piezo_1_phase_layout.addWidget(self.piezo_1_phase_slider_label)
         piezo_1_phase_layout.addWidget(self.piezo_1_phase_slider)
-        piezo_1_phase_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_1_phase_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         #piezo_1_phase_layout.setStretch(0, 0)
         self.piezo_1_phase_widget = CentralWidget()
         self.piezo_1_phase_widget.setLayout(piezo_1_phase_layout)
@@ -279,23 +260,23 @@ class MainWindow(QMainWindow):
         piezo_2_freq_layout = QVBoxLayout()
         piezo_2_freq_layout.addWidget(self.piezo_2_freq_slider_label)
         piezo_2_freq_layout.addWidget(self.piezo_2_freq_slider)
-        piezo_2_freq_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_2_freq_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         piezo_2_freq_layout.setStretch(0, 0)
         self.piezo_2_freq_widget = CentralWidget()
         self.piezo_2_freq_widget.setLayout(piezo_2_freq_layout)        
         
         # Create a slider for the amplitude of the piezo 2
         self.piezo_2_amp_slider = QSlider(Qt.Horizontal, self)
-        self.piezo_2_amp_slider.setMinimum(piezo_min_amp)
-        self.piezo_2_amp_slider.setMaximum(piezo_max_amp)
-        self.piezo_2_amp_slider.setTickInterval(piezo_amp_step)
-        self.piezo_2_amp_slider.setValue(piezo_default_amp)
+        self.piezo_2_amp_slider.setMinimum(piezo_min_vpp)
+        self.piezo_2_amp_slider.setMaximum(piezo_max_vpp)
+        self.piezo_2_amp_slider.setTickInterval(piezo_vpp_step)
+        self.piezo_2_amp_slider.setValue(piezo_default_vpp)
         self.piezo_2_amp_slider.setEnabled(True)
-        self.piezo_2_amp_slider_label = QLabel(f"Amplitude: {self.piezo_2_amp_slider.value} (V)", self)
+        self.piezo_2_amp_slider_label = QLabel(f"Amplitude: {self.piezo_2_amp_slider.value} (V p-p)", self)
         piezo_2_amp_layout = QVBoxLayout()
         piezo_2_amp_layout.addWidget(self.piezo_2_amp_slider_label)
         piezo_2_amp_layout.addWidget(self.piezo_2_amp_slider)
-        piezo_2_amp_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_2_amp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         piezo_2_amp_layout.setStretch(0, 0)
         self.piezo_2_amp_widget = CentralWidget()
         self.piezo_2_amp_widget.setLayout(piezo_2_amp_layout)
@@ -311,7 +292,7 @@ class MainWindow(QMainWindow):
         piezo_2_phase_layout = QVBoxLayout()
         piezo_2_phase_layout.addWidget(self.piezo_2_phase_slider_label)
         piezo_2_phase_layout.addWidget(self.piezo_2_phase_slider)
-        piezo_2_phase_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        piezo_2_phase_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         piezo_2_phase_layout.setStretch(0, 0)
         self.piezo_2_phase_widget = CentralWidget()
         self.piezo_2_phase_widget.setLayout(piezo_2_phase_layout)
@@ -337,7 +318,7 @@ class MainWindow(QMainWindow):
         rope_temp_layout = QVBoxLayout()
         rope_temp_layout.addWidget(self.rope_temp_slider_label)
         rope_temp_layout.addWidget(self.rope_temp_slider)
-        rope_temp_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        rope_temp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         rope_temp_layout.setStretch(0, 0)
         self.rope_temp_widget = CentralWidget()
         self.rope_temp_widget.setLayout(rope_temp_layout)
@@ -357,13 +338,13 @@ class MainWindow(QMainWindow):
         self.heat_flux_slider.setMinimum(heat_flux_min)
         self.heat_flux_slider.setMaximum(heat_flux_max)
         self.heat_flux_slider.setTickInterval(heat_flux_step)
-        self.heat_flux_slider.setValue(0)
+        self.heat_flux_slider.setValue(heat_flux_default)
         self.heat_flux_slider.setEnabled(True)
         self.heat_flux_slider_label = QLabel(f"Heat Flux: {self.heat_flux_slider.value} (W/m²)", self)
         heat_flux_layout = QVBoxLayout()
         heat_flux_layout.addWidget(self.heat_flux_slider_label)
         heat_flux_layout.addWidget(self.heat_flux_slider)
-        heat_flux_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        heat_flux_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         heat_flux_layout.setStretch(0, 0)
         self.heat_flux_widget = CentralWidget()
         self.heat_flux_widget.setLayout(heat_flux_layout)
@@ -378,7 +359,7 @@ class MainWindow(QMainWindow):
         
         # -------------------------------- PLOT ANIMATION ELEMENTS --------------------------------
         self.log.debug("Creating plot animation elements")
-        self.plot_x_time_limit = 30     # Seconds to show on the plots
+        self.plot_x_time_limit = 60     # Seconds to show on the plots
         # Create a layout for the two plots
         self.plot_layout = pg.GraphicsLayoutWidget(show=True)
         
@@ -387,11 +368,12 @@ class MainWindow(QMainWindow):
         self.flow_sensor_plot = self.plot_layout.addPlot(row=1, col=0)
         
         # Create the data numpy arrays
-        num_elements_plot = input_data_rate * self.plot_x_time_limit
-        num_thermistors = 12
-        self.time_data = np.empty(shape=(num_elements_plot))                          # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
-        self.thermistor_data = np.empty(shape=(num_thermistors, num_elements_plot))      # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
-        self.flow_sensor_data = np.empty(shape=(2, num_elements_plot))                   # Each time the flow sensor is read, the data shifted using np.roll and is added to the end of this array
+        self.num_elements_plot = self.input_data_rate * self.plot_x_time_limit
+        self.num_thermistors = 12
+        self.monitor_time_data = np.empty(shape=(self.num_elements_plot))                          # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.driver_time_data = np.empty(shape=(self.num_elements_plot))                           # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.thermistor_data = np.empty(shape=(self.num_thermistors, self.num_elements_plot))      # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.flow_sensor_data = np.empty(shape=(2, self.num_elements_plot))                   # Each time the flow sensor is read, the data shifted using np.roll and is added to the end of this array
         
         # Set background color of plots
         vb1 = self.thermistor_plot.getViewBox()
@@ -404,7 +386,7 @@ class MainWindow(QMainWindow):
         self.thermistor_plot.setLabel('left', 'Temperature', units='°C')  # Set y-axis label
         self.thermistor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
         self.thermistor_plot.setTitle('Thermistor Temperature vs. Time')  # Set plot title
-        self.thermistor_plot.setLimits(yMin=20, yMax=120)  # Set y-axis limits
+        self.thermistor_plot.setLimits(yMin=20, yMax=150)  # Set y-axis limits
         self.thermistor_plot.addLegend(offset=(-1, 1))  # Set legend offset
         
         self.flow_sensor_plot.showGrid(x=True, y=True)  # Show grid
@@ -430,7 +412,7 @@ class MainWindow(QMainWindow):
             (200, 255, 200),    # Spring green           
         ]
         line_width = 2
-        self.thermistor_curves = [self.thermistor_plot.plot(pen=pg.mkPen(color=colors[i], width=line_width), name=f"Thermistor {i+1}") for i in range(num_thermistors)]
+        self.thermistor_curves = [self.thermistor_plot.plot(pen=pg.mkPen(color=colors[i], width=line_width), name=f"Thermistor {i+1}") for i in range(self.num_thermistors)]
         fs_inlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[0], width=line_width), name="Inlet Flow Sensor")
         fs_outlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[1], width=line_width), name="Outlet Flow Sensor")
         self.flow_sensor_curves = [fs_inlet, fs_outlet]
@@ -441,46 +423,36 @@ class MainWindow(QMainWindow):
         self.plot_layout_widget.addWidget(self.plot_layout)
         self.plot_widget.setLayout(self.plot_layout_widget)
         
-        # # Create MplCanvas for the thermistor temperature data
-        # self.thermistor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
-        # self.thermistor_plot_toolbar = NavigationToolbar(self.thermistor_plot_canvas, self)
-        # self.thermistor_plot_widget = QWidget()
-        # self.thermistor_plot_layout = QVBoxLayout()
-        # self.thermistor_plot_layout.addWidget(self.thermistor_plot_toolbar)
-        # self.thermistor_plot_layout.addWidget(self.thermistor_plot_canvas)
-        # self.thermistor_plot_widget.setLayout(self.thermistor_plot_layout)
-        
-        # # Create MplCanvas for the flow sensor data
-        # self.flow_sensor_plot_canvas = MplCanvas(self, width=8, height=4, dpi=80)
-        # self.flow_sensor_plot_toolbar = NavigationToolbar(self.flow_sensor_plot_canvas, self)
-        # self.flow_sensor_plot_widget = QWidget()
-        # self.flow_sensor_plot_layout = QVBoxLayout()
-        # self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_toolbar)
-        # self.flow_sensor_plot_layout.addWidget(self.flow_sensor_plot_canvas)
-        # self.flow_sensor_plot_widget.setLayout(self.flow_sensor_plot_layout)
-        
         # -------------------------------- OTHER ELEMENTS --------------------------------
         self.log.debug("Creating other elements")
         # Creata a button to send the data to the Teensy
-        self.send_data_button = QPushButton("Send Data", self)
-        self.send_data_button.setEnabled(True)
-        self.send_data_button.setChecked(False)
-        self.send_data_button.setCheckable(True)
-        self.send_data_button.setSizePolicy(button_size_policy)
-        self.send_data_button.setStyleSheet(button_style)
+        self.start_test_button = QPushButton("Start Test", self)
+        self.start_test_button.setEnabled(True)
+        self.start_test_button.setChecked(False)
+        self.start_test_button.setCheckable(True)
+        self.start_test_button.setSizePolicy(button_size_policy)
+        self.start_test_button.setStyleSheet(button_style)
+        
+        # Create a preheat button to enable the heaters and wait for them to reach the desired temperature
+        self.preheat_button = QPushButton("Preheat", self)
+        self.preheat_button.setEnabled(True)
+        self.preheat_button.setChecked(False)
+        self.preheat_button.setCheckable(True)
+        self.preheat_button.setSizePolicy(button_size_policy)
+        self.preheat_button.setStyleSheet(button_style)
 
         # Create a guage for the heater block temperature
-        self.heater_block_temp_guage = QSlider(Qt.Horizontal, self)
-        self.heater_block_temp_guage.setMinimum(20)
-        self.heater_block_temp_guage.setMaximum(Heater_block_max_temp)
-        self.heater_block_temp_guage.setTickInterval(1)
-        self.heater_block_temp_guage.setValue(20)
-        self.heater_block_temp_guage.setEnabled(False)
-        self.heater_block_temp_guage_label = QLabel(f"Heat Block Temp: {self.heater_block_temp_guage.value} (°C)", self)
+        self.heater_block_temp_gauge = QSlider(Qt.Horizontal, self)
+        self.heater_block_temp_gauge.setMinimum(20)
+        self.heater_block_temp_gauge.setMaximum(Heater_block_max_temp)
+        self.heater_block_temp_gauge.setTickInterval(1)
+        self.heater_block_temp_gauge.setValue(20)
+        self.heater_block_temp_gauge.setEnabled(True)
+        self.heater_block_temp_gauge_label = QLabel(f"Heat Block Temp: {self.heater_block_temp_gauge.value} (°C)", self)
         heater_block_temp_layout = QVBoxLayout()
-        heater_block_temp_layout.addWidget(self.heater_block_temp_guage_label)
-        heater_block_temp_layout.addWidget(self.heater_block_temp_guage)
-        heater_block_temp_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        heater_block_temp_layout.addWidget(self.heater_block_temp_gauge_label)
+        heater_block_temp_layout.addWidget(self.heater_block_temp_gauge)
+        heater_block_temp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         heater_block_temp_layout.setStretch(0, 0)
         self.heater_block_temp_widget = CentralWidget()
         self.heater_block_temp_widget.setLayout(heater_block_temp_layout)
@@ -519,16 +491,14 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.piezo_2_enable_button)
         left_layout.addWidget(self.rope_temp_widget)
         
-
         # Add widgets to middle layout
         middle_layout.addWidget(self.plot_widget)
-        #self.log.debug("Adding widgets to middle layout")
-        #middle_layout.addWidget(self.thermistor_plot_widget, 2)     # Add the thermistor plot widget to the right layout
-        #middle_layout.addWidget(self.flow_sensor_plot_widget, 2)    # Add the flow sensor plot widget to the right layout
-        
+      
         # Add widgets to right layout
         self.log.debug("Adding widgets to right layout")
-        right_layout.addWidget(self.send_data_button)               # Add the send data button to the right layout
+        right_layout.addWidget(self.start_test_button)               # Add the start test button to the right layout
+        right_layout.addWidget(self.preheat_button)                  # Add the preheat button to the right layout
+        right_layout.addWidget(self.heat_flux_widget)               # Add the heat flux widget to the right layout
         right_layout.addWidget(self.heater_block_temp_widget)       # Add the heater block temperature widget to the right layout
         right_layout.addWidget(self.heater_block_enable_button)     # Add the heater block enable button to the right layout
         right_layout.addWidget(self.rope_enable_button)             # Add the rope heater enable button to the right layout
@@ -538,7 +508,7 @@ class MainWindow(QMainWindow):
         side_margin = 15
         top_btm_margin = 10
         self.log.debug("Aligning layouts")
-        left_layout.setAlignment(Qt.AlignVCenter)     # Align the left layout be evenly distributed in layout center
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)     # Align the left layout be evenly distributed in layout center
         left_layout.setContentsMargins(side_margin, top_btm_margin, side_margin, top_btm_margin)
         for i in range(left_layout.count()):
             item = left_layout.itemAt(i)
@@ -550,7 +520,7 @@ class MainWindow(QMainWindow):
                     if isinstance(subitem.widget(), QLabel):
                         #print("Found a QLabel inside a CentralWidget()")
                         subitem.widget().setFont(label_font)
-                        subitem.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                        subitem.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                         subitem.widget().setMinimumWidth(min_width_slider)
                     # Format the QSliders
                     elif isinstance(subitem.widget(), QSlider):
@@ -562,17 +532,34 @@ class MainWindow(QMainWindow):
             elif isinstance(left_layout.itemAt(i).widget(), QPushButton):
                 left_layout.itemAt(i).widget().setStyleSheet(button_style)
             left_layout.setStretch(i, 2)                               # Set the stretch of each slider in the left layout to 1
-        #middle_layout.setAlignment(Qt.AlignCenter)                     # Align the middle layout to the top of the window
+        #middle_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)                     # Align the middle layout to the top of the window
         #middle_layout.setStretch(0, 1)                                 # Set the stretch of the thermistor plot to 1
         #middle_layout.setStretch(1, 1)                                 # Set the stretch of the flow sensor plot to 1
-        right_layout.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)    # Align the right layout be evenly distributed in layout center
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)    # Align the right layout be evenly distributed in layout center
         right_layout.setContentsMargins(side_margin, top_btm_margin, side_margin, top_btm_margin)
         for i in range(right_layout.count()):
-            if isinstance(right_layout.itemAt(i).widget(), QSlider):
-                right_layout.setStretch(i, 1)                              # Set the stretch of each widget in the right layout to 1
-
-            right_layout.itemAt(i).widget().setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Set the size policy of each widget in the left layout to expanding
-        
+            item = right_layout.itemAt(i)
+            # Format the CentralWidget()s in the left layout
+            if isinstance(item.widget(), CentralWidget):
+                for j in range(item.widget().layout().count()):
+                    subitem = item.widget().layout().itemAt(j)
+                    # Format the QLabel
+                    if isinstance(subitem.widget(), QLabel):
+                        #print("Found a QLabel inside a CentralWidget()")
+                        subitem.widget().setFont(label_font)
+                        subitem.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+                        subitem.widget().setMinimumWidth(min_width_slider)
+                    # Format the QSliders
+                    elif isinstance(subitem.widget(), QSlider):
+                        #print("Found a QSlider inside a CentralWidget()")
+                        subitem.widget().setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                        subitem.widget().setStyleSheet(slider_style) 
+                #item.widget().setStyleSheet(widget_border_style) 
+            # Format the QPushButtons in the left layout
+            elif isinstance(right_layout.itemAt(i).widget(), QPushButton):
+                right_layout.itemAt(i).widget().setStyleSheet(button_style)
+            right_layout.setStretch(i, 2)   
+            
         # Creat widgets for the vertical layouts and set the left and right to have a fixed width
         side_layout_width = 300
         self.log.debug("Creating widgets for vertical layouts")
@@ -619,6 +606,9 @@ class MainWindow(QMainWindow):
         self.piezo_2_amp_slider.valueChanged.connect(self.update_piezo_2_amp_slider_label)
         self.piezo_2_phase_slider.valueChanged.connect(self.update_piezo_2_phase_slider_label)
         
+        # Connect the signals for the temperature of heater block 
+        self.heater_block_temp_gauge.valueChanged.connect(self.update_heater_block_temp_gauge_label)
+        
         # Connect the signals for the rope heater slider
         self.rope_temp_slider.valueChanged.connect(self.update_rope_temp_slider_label)
         
@@ -637,11 +627,14 @@ class MainWindow(QMainWindow):
         # Connect the signals for the heater block enable button
         self.heater_block_enable_button.clicked.connect(self.enable_heater_block)
         
-        # Connect the signals for the send data button
-        self.send_data_button.clicked.connect(self.send_data)
+        # Connect the signals for the start test button
+        self.start_test_button.clicked.connect(self.start_test_button_click)
+        
+        # Connect the signals for the preheat button
+        self.preheat_button.clicked.connect(self.preheat_button_click)
         
         # Connect the signals for the emergency stop button
-        self.emergency_stop_button.clicked.connect(self.emergency_stop)
+        self.emergency_stop_button.clicked.connect(self.emergency_stop_button_click)
         
         # Initialize all slider elements to initial values for label updates
         self.init_update_all_slider_elements()
@@ -649,9 +642,16 @@ class MainWindow(QMainWindow):
         # Create timer for the plotting and run it
         self.plot_timer = QTimer(self)
         self.plot_timer.timeout.connect(self.update_plots_from_teensy_input_data)
-        self.plot_timer.start(200)
+        self.plot_timer.start(200)      # Update the plot every 200 ms
         
+        # Create a timer to update the heater block temp gauge
+        self.heater_block_temp_gauge_timer = QTimer(self)
+        self.heater_block_temp_gauge_timer.timeout.connect(self.update_heater_block_temp_gauge)
+        self.heater_block_temp_gauge_timer.start(500)      # Update the plot every 200 ms
         
+        # Create a timer to update the test time
+        self.test_time_timer = QTimer(self)
+        self.test_time_timer.timeout.connect(self.update_test_time)
         
         
         
@@ -669,115 +669,203 @@ class MainWindow(QMainWindow):
         self.update_rope_temp_slider_label(self.rope_temp_slider.value())
         self.update_heat_flux_slider_label(self.heat_flux_slider.value())
         
-        self.update_heater_block_temp_guage_label(self.heater_block_temp_guage.value())
+        self.update_heater_block_temp_gauge_label(self.heater_block_temp_gauge.value())
     
         
     def update_elements_from_teensy_input_data(self):
         """Updates the GUI elements from the latest Teensy input data, not necessarily when Teensy data is received and stored"""
         self.log.debug("Updating GUI elements from latest Teensy input data")
         
-        self.update_piezo_1_freq_slider_value(self.input_data.piezo_1_freq_hz)
-        self.update_piezo_1_amp_slider_value(self.input_data.piezo_1_vpp)
-        self.update_piezo_1_phase_slider_value(self.input_data.piezo_1_phase_deg)
+        self.update_piezo_1_freq_slider_value(self.driver_input_data.piezo_1_freq_hz)
+        self.update_piezo_1_amp_slider_value(self.driver_input_data.piezo_1_vpp)
+        self.update_piezo_1_phase_slider_value(self.driver_input_data.piezo_1_phase_deg)
         
-        self.update_piezo_2_freq_slider_value(self.input_data.piezo_2_freq_hz)
-        self.update_piezo_2_amp_slider_value(self.input_data.piezo_2_vpp)
-        self.update_piezo_2_phase_slider_value(self.input_data.piezo_2_phase_deg)
+        self.update_piezo_2_freq_slider_value(self.driver_input_data.piezo_2_freq_hz)
+        self.update_piezo_2_amp_slider_value(self.driver_input_data.piezo_2_vpp)
+        self.update_piezo_2_phase_slider_value(self.driver_input_data.piezo_2_phase_deg)
         
-        self.update_rope_temp_slider_value(self.input_data.inlet_fluid_temp_c)
-        self.update_heat_flux_slider_value(self.input_data.heat_flux_w_per_m2)
+        self.update_rope_temp_slider_value(self.monitor_input_data.inlet_fluid_temp_c)
+        self.update_heat_flux_slider_value(self.monitor_input_data.heat_flux)
         
-        self.update_heater_block_temp_guage_value(self.input_data.heat_block_temp_c)
+        self.update_heater_block_temp_gauge()
         
-        self.update_piezo_1_enable_button(self.input_data.piezo_1_enable)
-        self.update_piezo_2_enable_button(self.input_data.piezo_2_enable)
-        self.update_rope_enable_button(self.input_data.rope_heater_enable)
-        self.update_heater_block_enable_button(self.input_data.heater_block_enable)
+        self.update_piezo_1_enable_button(self.driver_input_data.piezo_1_enable)
+        self.update_piezo_2_enable_button(self.driver_input_data.piezo_2_enable)
+        self.update_rope_enable_button(self.monitor_input_data.rope_heater_enable)
+        self.update_heater_block_enable_button(self.monitor_input_data.heater_block_enable)
         
-        #self.update_send_data_button(self.teensy_input_data.send_data)
-        #self.update_emergency_stop_button(self.teensy_input_data.emergency_stop)    
+        self.update_start_test_button(False)
+        self.update_preheat_button(False)
+        self.update_emergency_stop_button(False)    
+        
+    def update_heater_block_temp_gauge(self):
+        """Updates the heater block temp gauge via timer"""
+        heat_block_temp = np.average((self.monitor_input_data.thermistor_13_temp_c, self.monitor_input_data.thermistor_14_temp_c))
+        self.update_heater_block_temp_gauge_value(heat_block_temp)
+     
+    @qasync.asyncSlot()   
+    async def update_test_time(self):
+        """Updates the test time on the start button label via timer"""
+        # Check to see if the current_test_time is not zero, if so, decrement it and update the label
+        #self.emergency_stop_button.setEnabled(True)
+        #self.emergency_stop_button.setCheckable(True)
+        if self.current_test_time > 0:
+            self.current_test_time -= 1
+            self.start_test_button.setText(f"TESTING... {self.current_test_time}")
+            # If the current test time is half of the test time then start the piezos given their current settings
+            if self.current_test_time == self.test_time/2:
+                self.log.debug("Starting piezos")
+                # We use the data that was written at the start of the test as the piezo settings, so we don't update them here
+                self.driver_output_data.reset_time = np.bool_(False)
+                self.driver_output_data.piezo_1_enable = np.bool_(self.piezo_1_enable_button.isChecked())
+                self.driver_output_data.piezo_2_enable = np.bool_(self.piezo_2_enable_button.isChecked())
+                await self.ET_driver.send_data()        # Send the data to the Driver
+        else:
+            # Reset the button, enable all elements, and stop the timer
+            self.start_test_button.setText("Start Test")
+            self.start_test_button.setChecked(False)
+            self.start_test_button.setEnabled(True)
+            self.start_test_button.setCheckable(True)
+            self.ET_monitor.stop_saving()
+            self.ET_driver.stop_saving()
+            # Stop the piezos
+            self.log.debug("Stopping piezos")
+            self.driver_output_data.reset_time = np.bool_(False)
+            self.driver_output_data.piezo_1_enable = np.bool_(False)
+            self.driver_output_data.piezo_2_enable = np.bool_(False)
+            await self.ET_driver.send_data()        # Send the data to the Driver
+            # Save the data to a file
+            pyEasyTransfer.save_data_to_pickle_file(self.ET_monitor.save_read_data, dir='data')
+            pyEasyTransfer.save_data_to_pickle_file(self.ET_driver.save_read_data, dir='data')
+            self.enable_all_elements()
+            self.test_time_timer.stop()
+
         
     def update_plots_from_teensy_input_data(self):
         """Updates the plots from the latest Teensy input data, not necessarily when Teensy data is received and stored
         This function is asyncronous and should be called from a separate thread"""
-        # Need to use the self.input_data onject to grab the most recent data
-        # First check to see if the data has changed since the last update
-        
-        if not (self.last_io_count == self.input_data.io_count):
-            self.log.debug("Updating plots from latest Teensy input data")
+        # Need to use the self.monitor_input_data onject to grab the most recent data
+        self.mutex.lock()
+        try:
+            # First check and see if the time has been reset, if so, reset the plots
+            if self.monitor_input_data.time_ms < self.monitor_time_data[-1]: 
+                self.thermistor_plot.clear()
+                for curve in self.thermistor_curves:
+                    self.thermistor_plot.removeItem(curve)
+                # Reset the time and data arrays
+                self.monitor_time_data[:] = 0
+                self.thermistor_data[:, :] = 0
+                vb1 = self.thermistor_plot.getViewBox()
+                #vb1.clear()
+            if self.driver_input_data.time_ms < self.driver_time_data[-1]:
+                self.flow_sensor_plot.clear()
+                for curve in self.flow_sensor_curves:
+                    self.flow_sensor_plot.removeItem(curve)
+                # Reset the time and data arrays
+                self.driver_time_data[:] = 0        
+                self.flow_sensor_data[:, :] = 0
+                vb2 = self.flow_sensor_plot.getViewBox()
+                #vb2.clear()
             
-            # Get the time of the latest data
-            self.time_data[:-1] = self.time_data[1:]                            # shift the time data in the array one sample left
-            self.time_data[-1] = np.round(self.input_data.time_ms/1000, 3)      # add the latest time data to the end of the array, this is in seconds
-            
-            # Get the min and max value of the time for updating the X limits of the plots
-            if self.time_data[-1]-self.time_data[0] > self.plot_x_time_limit:
-                min_time = self.time_data[-1]-self.plot_x_time_limit
-                max_time = self.time_data[-1]
-            else:
-                min_time = self.time_data[0]
-                max_time = min_time + self.plot_x_time_limit
-            max_time += 2    # Add some seconds to the max time to give some padding at the end of the plot
+            # Update the thermistor plot
+            if not (self.last_io_count_monitor == self.monitor_input_data.io_count):
+                #self.log.debug("Updating plots from latest Teensy input data")
                 
-            # Update the x limits of the plots
-            self.thermistor_plot.setXRange(min_time, max_time, padding=0.0)
-            self.flow_sensor_plot.setXRange(min_time, max_time, padding=0.0)
-            self.log.debug("Updated plot x limits to: " + str(min_time) + " to " + str(max_time))
+                # Get the time of the latest data
+                self.monitor_time_data[:-1] = self.monitor_time_data[1:]                            # shift the time data in the array one sample left
+                self.monitor_time_data[-1] = np.round(self.monitor_input_data.time_ms/1000, 3)      # add the latest time data to the end of the array, this is in seconds
                 
+                # Get the min and max value of the time for updating the X limits of the plots
+                if self.monitor_time_data[-1]-self.monitor_time_data[0] > self.plot_x_time_limit:
+                    min_time = self.monitor_time_data[-1]-self.plot_x_time_limit
+                    max_time = self.monitor_time_data[-1]
+                else:
+                    min_time = self.monitor_time_data[0]
+                    max_time = min_time + self.plot_x_time_limit
+                max_time += 2    # Add some seconds to the max time to give some padding at the end of the plot
+                    
+                # Update the x limits of the plots
+                self.thermistor_plot.setXRange(min_time, max_time, padding=0.0) 
 
-            # For each curve in self.thermistor_curves, update the data in self.thermistor_data given the latest Teensy input data
-            thermistor_temps = [self.input_data.thermistor_1_temp_c,
-                                self.input_data.thermistor_2_temp_c,
-                                self.input_data.thermistor_3_temp_c,
-                                self.input_data.thermistor_4_temp_c,
-                                self.input_data.thermistor_5_temp_c,
-                                self.input_data.thermistor_6_temp_c,
-                                self.input_data.thermistor_7_temp_c,
-                                self.input_data.thermistor_8_temp_c,
-                                self.input_data.thermistor_9_temp_c,
-                                self.input_data.thermistor_10_temp_c,
-                                self.input_data.thermistor_11_temp_c,
-                                self.input_data.thermistor_12_temp_c]
-            for curve_num in range(len(self.thermistor_curves)):
-                self.thermistor_data[curve_num][:-1] = self.thermistor_data[curve_num][1:]      # Shift data in the array one sample left
-                self.thermistor_data[curve_num][-1] = thermistor_temps[curve_num]                          # Add latest data to the end of the array
-                curve = self.thermistor_curves[curve_num]
-                #self.log.debug(f"Shape of time data: {self.time_data.shape}")
-                #self.log.debug(f"Shape of thermistor data: {self.thermistor_data[:][curve_num].shape}")
-                curve.setData(self.time_data, self.thermistor_data[curve_num][:])
+                # For each curve in self.thermistor_curves, update the data in self.thermistor_data given the latest Teensy input data
+                thermistor_temps = [self.monitor_input_data.thermistor_1_temp_c,
+                                    self.monitor_input_data.thermistor_2_temp_c,
+                                    self.monitor_input_data.thermistor_3_temp_c,
+                                    self.monitor_input_data.thermistor_4_temp_c,
+                                    self.monitor_input_data.thermistor_5_temp_c,
+                                    self.monitor_input_data.thermistor_6_temp_c,
+                                    self.monitor_input_data.thermistor_7_temp_c,
+                                    self.monitor_input_data.thermistor_8_temp_c,
+                                    self.monitor_input_data.thermistor_9_temp_c,
+                                    self.monitor_input_data.thermistor_10_temp_c,
+                                    self.monitor_input_data.thermistor_11_temp_c,
+                                    self.monitor_input_data.thermistor_12_temp_c]
+                for curve_num in range(len(self.thermistor_curves)):
+                    self.thermistor_data[curve_num][:-1] = self.thermistor_data[curve_num][1:]      # Shift data in the array one sample left
+                    self.thermistor_data[curve_num][-1] = thermistor_temps[curve_num]                          # Add latest data to the end of the array
+                    curve = self.thermistor_curves[curve_num]
+                    #self.log.debug(f"Shape of time data: {self.time_data.shape}")
+                    #self.log.debug(f"Shape of thermistor data: {self.thermistor_data[:][curve_num].shape}")
+                    curve.setData(self.monitor_time_data, self.thermistor_data[curve_num][:])
+                    
+                # Update the y limits of ALL of the thermistor curves on the plot
+                min_y = np.min(self.thermistor_data)
+                max_y = np.max(self.thermistor_data)
+                padding = (min_y+max_y)/2 * 0.1     # Add 10% padding to the y limits
+                self.thermistor_plot.setYRange(min_y, max_y, padding=padding)
+                #self.log.debug("Updated thermistor plot y limits to: " + str(min_y) + " to " + str(max_y))
+
+                # Update the last IO count
+                self.last_io_count_monitor = self.monitor_input_data.io_count
+            
+            # Update the flow rate plot
+            if not (self.last_io_count_driver == self.driver_input_data.io_count):   
+                # Get the time of the latest data
+                self.driver_time_data[:-1] = self.driver_time_data[1:]                            # shift the time data in the array one sample left
+                self.driver_time_data[-1] = np.round(self.driver_input_data.time_ms/1000, 3)      # add the latest time data to the end of the array, this is in seconds
+
+                # Get the min and max value of the time for updating the X limits of the plots
+                if self.driver_time_data[-1]-self.driver_time_data[0] > self.plot_x_time_limit:
+                    min_time = self.driver_time_data[-1]-self.plot_x_time_limit
+                    max_time = self.driver_time_data[-1]
+                else: 
+                    min_time = self.driver_time_data[0]
+                    max_time = min_time + self.plot_x_time_limit    
+                max_time += 2    # Add some seconds to the max time to give some padding at the end of the plot
                 
-            # Update the y limits of ALL of the thermistor curves on the plot
-            min_y = np.min(self.thermistor_data)
-            max_y = np.max(self.thermistor_data)
-            self.thermistor_plot.setYRange(min_y, max_y, padding=5.0)
-            self.log.debug("Updated thermistor plot y limits to: " + str(min_y) + " to " + str(max_y))
+                # Update the x limits of the plots
+                self.flow_sensor_plot.setXRange(min_time, max_time, padding=0.0)            
                 
-            # For each curve in self.flow_sensor_curves, update the data in self.flow_sensor_data given the latest Teensy input data
-            flow_rates = [self.input_data.inlet_flow_sensor_ml_min,
-                            self.input_data.outlet_flow_sensor_ml_min]
-            print(flow_rates)
-            for curve_num in range(len(self.flow_sensor_curves)):
-                self.flow_sensor_data[curve_num][:-1] = self.flow_sensor_data[curve_num][1:]
-                self.flow_sensor_data[curve_num][-1] = flow_rates[curve_num]
-                curve = self.flow_sensor_curves[curve_num]
-                curve.setData(self.time_data, self.flow_sensor_data[curve_num][:])
+                # For each curve in self.flow_sensor_curves, update the data in self.flow_sensor_data given the latest Teensy input data
+                flow_rates = [self.driver_input_data.inlet_flow_sensor_ml_min,
+                                self.driver_input_data.outlet_flow_sensor_ml_min]
                 
-            # Update the y limits of the flow sensor plot
-            min_y = np.min(self.flow_sensor_data)
-            max_y = np.max(self.flow_sensor_data)
-            self.flow_sensor_plot.setYRange(min_y, max_y, padding=5.0)
-            self.log.debug("Updated flow sensor plot y limits to: " + str(min_y) + " to " + str(max_y))
-                
-        # Update the last IO count
-        self.last_io_count = self.input_data.io_count
-        
+                for curve_num in range(len(self.flow_sensor_curves)):
+                    self.flow_sensor_data[curve_num][:-1] = self.flow_sensor_data[curve_num][1:]
+                    self.flow_sensor_data[curve_num][-1] = flow_rates[curve_num]
+                    curve = self.flow_sensor_curves[curve_num]
+                    curve.setData(self.driver_time_data, self.flow_sensor_data[curve_num][:])
+                    
+                # Update the y limits of the flow sensor plot
+                min_y = np.min(self.flow_sensor_data)
+                max_y = np.max(self.flow_sensor_data)
+                padding = (min_y+max_y)/2 * 0.1     # Add 10% padding to the y limits
+                self.flow_sensor_plot.setYRange(min_y, max_y, padding=padding)
+                #self.flow_sensor_plot.setLimits(min_y, max_y, padding=padding)
+                #self.log.debug("Updated flow sensor plot y limits to: " + str(min_y) + " to " + str(max_y))
+                    
+                # Update the last IO count
+                self.last_io_count_driver = self.driver_input_data.io_count
+        finally:
+            self.mutex.unlock()
+            
     """ Update the element labels """
     def update_piezo_1_freq_slider_label(self, value):
         self.piezo_1_freq_slider_label.setText(f"Frequency: {value} (Hz)")
         #self.log.info(f"Piezo 1 frequency label update: {value} (Hz)")
     
     def update_piezo_1_amp_slider_label(self, value):
-        self.piezo_1_amp_slider_label.setText(f"Amplitude: {value} (V)")
+        self.piezo_1_amp_slider_label.setText(f"Amplitude: {value} (V p-p)")
         #self.log.info(f"Piezo 1 amplitude label update: {value} (V)")
         
     def update_piezo_1_phase_slider_label(self, value):
@@ -789,7 +877,7 @@ class MainWindow(QMainWindow):
         #self.log.info(f"Piezo 2 frequency label update: {value} (Hz)")
         
     def update_piezo_2_amp_slider_label(self, value):
-        self.piezo_2_amp_slider_label.setText(f"Amplitude: {value} (V)")
+        self.piezo_2_amp_slider_label.setText(f"Amplitude: {value} (V p-p)")
         #self.log.info(f"Piezo 2 amplitude label update: {value} (V)")
         
     def update_piezo_2_phase_slider_label(self, value):
@@ -804,8 +892,8 @@ class MainWindow(QMainWindow):
         self.heat_flux_slider_label.setText(f"Heat Flux: {value} (W/m²)")
         #self.log.info(f"Heat flux label update: {value} (W/m²)")
     
-    def update_heater_block_temp_guage_label(self, value):
-        self.heater_block_temp_guage_label.setText(f"Heat Block Temp: {value} (°C)")
+    def update_heater_block_temp_gauge_label(self, value):
+        self.heater_block_temp_gauge_label.setText(f"Heat Block Temp: {value} (°C)")
         #self.log.info(f"Heat block temperature label update: {value} (°C)")
     
     """ Update the element values """
@@ -841,14 +929,18 @@ class MainWindow(QMainWindow):
         self.heat_flux_slider.setValue(value)   
         #self.log.info(f"Heat flux slider update, heat flux: {value} (W/m²)")
     
-    def update_heater_block_temp_guage_value(self, value):
-        self.heater_block_temp_guage.setValue(value)
+    def update_heater_block_temp_gauge_value(self, value):
+        self.heater_block_temp_gauge.setValue(value)
         #self.log.info(f"Heater block temp guage update, temperature: {value} (°C)")
         
     """ Update button states """
-    def update_send_data_button(self, state):
-        self.send_data_button.setChecked(state)
+    def update_start_test_button(self, state):
+        self.start_test_button.setChecked(state)
         #self.log.info(f"Send data button update, state: {state}")
+    
+    def update_preheat_button(self, state):
+        self.preheat_button.setChecked(state)
+        #self.log.info(f"Preheat button update, state: {state}")
     
     def update_emergency_stop_button(self, state):
         self.emergency_stop_button.setChecked(state)
@@ -871,36 +963,80 @@ class MainWindow(QMainWindow):
         #self.log.info(f"Heat flux enable button update, state: {state}")
         
     """ Button callbacks """
-    async def send_data(self):
-        self.send_data_button.setEnabled(False)
-        self.send_data_button.setText("Sending Data...")
-        self.log.info("Sending data to the teensy")
-        self.log.debug("PUT SERIAL STRING HERE")
+    @qasync.asyncSlot()
+    async def start_test_button_click(self):
+        self.start_test_button.setEnabled(False)
+        self.log.info("Sending data to the teensy, starting test...")
         ################# SEND THE DATA TO SERIAL CONNECTION #################
         # Go through each variable in the output data struct and set the value given the value in the GUI
-        self.update_output_ETdata_object()     
-        await self.ET.send_data()
+        self.update_output_ETdata(emergency=False)   
+        # Disable the piezos temporarily, we turn them on half way through the test
+        self.driver_output_data.piezo_1_enable = False
+        self.driver_output_data.piezo_2_enable = False
+        # Send the data to the teensys
+        await self.ET_driver.send_data()
+        await self.ET_monitor.send_data()
+        #self.start_test_button.setText("TESTING...")
+        #self.disable_all_elements()
+        self.emergency_stop_button.setEnabled(True)     # Enable the emergency stop button
+        # Reset the io count (This overwrites the data in the save_read_data object)
+        self.ET_monitor.save_read_data.io_count = 0
+        self.ET_driver.save_read_data.io_count = 0        
+        # Start saving on the objects
+        self.ET_driver.start_saving()
+        self.ET_monitor.start_saving()
+        self.current_test_time = self.test_time     # Set the current test time to the total test time
+        self.test_time_timer.start(1000)            # Start the test time timer for updating the test time label wihtout blocking the emergency stop button
+    
+    @qasync.asyncSlot()
+    async def emergency_stop_button_click(self):
+        self.emergency_stop_button.setChecked(True)
+        #Turn off all boolean buttons
+        self.piezo_1_enable_button.setChecked(False)
+        self.piezo_2_enable_button.setChecked(False)
+        self.rope_enable_button.setChecked(False)
+        self.heater_block_enable_button.setChecked(False)
+        self.start_test_button.setChecked(False)
+        self.preheat_button.setChecked(False)
         
-        self.send_data_button.setText("Send Data")
-        self.send_data_button.setEnabled(True)
+        self.current_test_time = 0      # This will stop any current testing
         
-    async def emergency_stop(self):
-        self.disable_all_elements()
-        self.emergency_stop_button.setEnabled(False)
+        # Disable all elements
+        #self.disable_all_elements()
+        #self.emergency_stop_button.setEnabled(False)
         self.emergency_stop_button.setText("Stopping...")
         self.log.error("Emergency stop")
         ################# SEND THE DATA TO SERIAL CONNECTION #################
-        # Set all values to zero or False in the output
-        for variable, _dtype in self.output_data.struct_def.items():
-            if _dtype == np.bool_:
-                setattr(self, variable, False)
-            else:
-                setattr(self, variable, 0)
-        await self.ET.send_data()
-        
+        # Set all values to zero or False in the output for driver
+        self.update_output_ETdata(emergency=False)      # Init values if needed
+        self.update_output_ETdata(emergency=True)
+        await self.ET_driver.send_data()
+        await self.ET_monitor.send_data()        
+        await asyncio.sleep(1)
+        self.emergency_stop_button.setChecked(False)
         self.emergency_stop_button.setText("Emergency Stop")
-        self.emergency_stop_button.setEnabled(True)
+        #self.emergency_stop_button.setEnabled(True)
+        #self.enable_all_elements()
         
+        
+    @qasync.asyncSlot()
+    async def preheat_button_click(self):
+        """Enable rope heater and the heater block at given temperature/heatflux, send data to monitor"""
+        state = self.preheat_button.isChecked()
+        
+        # Check the element buttons
+        self.heater_block_enable_button.setChecked(state)
+        self.rope_enable_button.setChecked(state)
+        
+        # Set the data struct
+        self.monitor_output_data.rope_heater_enable             = np.bool_(self.rope_enable_button.isChecked())
+        self.monitor_output_data.heater_block_enable            = np.bool_(self.heater_block_enable_button.isChecked())
+        self.monitor_output_data.inlet_fluid_temp_setpoint_c    = np.float32(self.rope_temp_slider.value())
+        self.monitor_output_data.heat_flux                      = np.float32(self.heat_flux_slider.value())
+        self.monitor_output_data.reset_time                     = np.bool_(False)
+        await self.ET_monitor.send_data()
+        
+  
     def enable_piezo_1(self):
         if self.piezo_1_enable_button.isChecked():
             self.log.info("Piezo 1 enabled")
@@ -928,156 +1064,72 @@ class MainWindow(QMainWindow):
     def disable_all_elements(self):
         """Disable all elements in the window, except the emergency stop button and the plots"""
         for widget in self.window_widget.children():
-            if not isinstance(widget, MplCanvas):
+            if not isinstance(widget, pg.GraphicsLayoutWidget):
                 try:
                     widget.setEnabled(False)
                 except:
                     pass
         # Re-enable the emergency stop button
         self.emergency_stop_button.setEnabled(True)
+        self.emergency_stop_button.setChecked(False)
+        self.emergency_stop_button.setCheckable(True)
+        
+    def enable_all_elements(self):
+        """Enable all elements that are active components, don't enable the heater block temp guage"""
+        for widget in self.window_widget.children():
+            try:
+                widget.setEnabled(True)
+            except:
+                pass
+        # Disable the heater block temp gauge
+        self.heater_block_temp_gauge.setEnabled(False)
+        
             
-    def update_output_ETdata_object(self):
+    def update_output_ETdata(self, emergency=False, reset_time=True):
         """ Write the output iodata object to the output queue before sending to the serial connection """
-        self.output_data.heater_block_enable = self.heater_block_enable_button.isChecked()
-        self.output_data.rope_heater_enable = self.rope_enable_button.isChecked()
-        self.output_data.piezo_1_enable = self.piezo_1_enable_button.isChecked()
-        self.output_data.piezo_2_enable = self.piezo_2_enable_button.isChecked()
-        self.output_data.piezo_1_freq_hz = self.piezo_1_freq_slider.value()
-        self.output_data.piezo_1_vpp = self.piezo_1_amp_slider.value()
-        self.output_data.piezo_1_phase_deg = self.piezo_1_phase_slider.value()
-        self.output_data.piezo_2_freq_hz = self.piezo_2_freq_slider.value()
-        self.output_data.piezo_2_vpp = self.piezo_2_amp_slider.value()
-        self.output_data.piezo_2_phase_deg = self.piezo_2_phase_slider.value()
-        self.output_data.heat_flux = self.heat_flux_slider.value()   
-  
-    """ Timer methods """      
-    def stop_timer(self):
-        pass
-        
-    def start_timer(self):
-        pass
-   
-    # """Update the point plot canvas when the frequency slider or point slider is modified"""
-    # def update_point_plot(self):
-    #     self.point_plot_canvas.axes.clear()       # Clear the canvas of the old data
-    #     self.point_coherence_axis.axes.clear()
-    #     self.current_point_number = self.point_slider.point_number
-    #     #print(f"current point number: {self.current_point_number}")
-    #     #self.current_point = get_point_object(self.vibrometer.points, self.current_point_number)            # Get the current point object given slider value
-    #     self.point_plot_canvas.axes.grid(True)
-    #     self.point_plot_canvas.axes.set_title("Point " + str(self.current_point_number))
-    #     self.point_plot_canvas.axes.set_xlabel("Frequency (Hz)")
-    #     self.point_plot_canvas.axes.set_ylabel("FRF Amplitude (dB)")
-    #     #self.point_plot_canvas.axes.set_yscale('symlog')
-    #     self.point_coherence_axis.axes.plot(self.vibrometer.freq, self.vibrometer.avg_point.coherence.data, color='blue', alpha=0.5, linewidth=0.5)
-    #     self.point_coherence_axis.axes.set_ylabel(f"Coherence")
-    #     self.point_plot_canvas.axes.plot(self.vibrometer.freq, self.current_point.frf.data_db, color='red', linewidth=0.5)              # Plot the point FRF data in db scale
-    #     self.point_plot_canvas.axes.axvline(self.freq_slider.value(), color='black', linestyle='--', linewidth=1.0)        # Plot vertical line of the current frequency
-    #     peaks_x = self.current_point.frf_peaks[:, 0]
-    #     peaks_y = self.current_point.frf_peaks[:, 1]
-    #     self.point_plot_canvas.axes.scatter(peaks_x, peaks_y, edgecolors='black', s=20.0, facecolors=None)
-    #     curr_x = self.freq_slider.value()
-    #     #index = get_nearest_freq_index(self.vibrometer.freq, curr_x)
-    #     #curr_y = self.current_point.frf.data_db[index]
-    #     #curr_y_coh = np.real(self.current_point.coherence.data[index])
-    #     textbox_str = f"Freq: {np.round(curr_x, 2)} Hz\nAmplitude: {np.round(curr_y, 2)} dB\nCoherence: {np.round(curr_y_coh, 2)}"
-    #     textbox = AnchoredText(textbox_str, loc=4, prop=dict(size=10))
-    #     self.point_plot_canvas.axes.add_artist(textbox)
-    #     self.point_plot_canvas.draw()
-        
-    # """Update the average point plot canvas when frequency slider is modified"""
-    # def update_avg_point_plot(self):
-    #     self.avg_point_plot_canvas.axes.clear()    # Clear the canvas of the old data
-    #     self.avg_point_coherence_axis.axes.clear()
-    #     self.current_point_number = self.point_slider.point_number
-    #     self.avg_point_plot_canvas.axes.grid(True)
-    #     self.avg_point_plot_canvas.axes.set_title("Average of Points")
-    #     self.avg_point_plot_canvas.axes.set_xlabel(f"Frequency (Hz)")
-    #     self.avg_point_plot_canvas.axes.set_ylabel(f"FRF (dB)")
-    #     #self.avg_point_plot_canvas.axes.set_yscale('symlog')
-    #     self.avg_point_coherence_axis.axes.plot(self.vibrometer.freq, self.vibrometer.avg_point.coherence.data, color='blue', alpha=0.5, linewidth=0.5)
-    #     self.avg_point_coherence_axis.axes.set_ylabel(f"Coherence")
-    #     self.avg_point_plot_canvas.axes.plot(self.vibrometer.freq, self.vibrometer.avg_point.frf.data_db, color='red', linewidth=0.5)    # Plot the average FRF data in db scale
-    #     self.avg_point_plot_canvas.axes.axvline(self.freq_slider.value(), color='black', linestyle='--', linewidth=1.0)     # Plot vertical line of the current frequency
-    #     peaks_x = self.vibrometer.avg_point.frf_peaks[:, 0]
-    #     peaks_y = self.vibrometer.avg_point.frf_peaks[:, 1]
-    #     self.avg_point_plot_canvas.axes.scatter(peaks_x, peaks_y, edgecolors='black', s=20.0, facecolors=None)
-    #     curr_x = self.freq_slider.value()
-    #     index = get_nearest_freq_index(self.vibrometer.freq, curr_x)
-    #     curr_y = self.vibrometer.avg_point.frf.data_db[index]
-    #     curr_y_coh = np.real(self.vibrometer.avg_point.coherence.data[index])
-    #     textbox_str = f"Freq: {np.round(curr_x, 2)} Hz\nAmplitude: {np.round(curr_y, 2)} dB\nCoherence: {np.round(curr_y_coh, 2)}"
-    #     textbox = AnchoredText(textbox_str, loc=4, prop=dict(size=10))
-    #     self.avg_point_plot_canvas.axes.add_artist(textbox)
-    #     self.avg_point_plot_canvas.draw()
+        if emergency:
+            # Turn off all heaters and piezos
+            self.monitor_output_data.rope_heater_enable = np.bool_(False)
+            self.monitor_output_data.heater_block_enable = np.bool_(False)
+            self.driver_output_data.piezo_1_enable = np.bool_(False)
+            self.driver_output_data.piezo_2_enable = np.bool_(False)
+            self.driver_output_data.reset_time = np.bool_(False)
+            self.monitor_output_data.reset_time = np.bool_(False)
+            
+            # Set all values to zero or False in the output for monitor
+            # for out_data in [self.driver_output_data, self.monitor_output_data]:
+            #     for variable, _dtype in out_data.struct_def.items():
+            #         if _dtype == np.bool_:
+            #             setattr(self, variable, False)
+            #         elif _dtype == np.float32:
+            #             setattr(self, variable, 0.0)
+            #         elif _dtype == np.int32 or _dtype == np.uint32:
+            #             setattr(self, variable, 0)
+            #         else:
+            #             setattr(self, variable, 0)    
+        else:
+            # Update the driver elements
+            self.driver_output_data.reset_time          = np.bool_(reset_time)
+            self.driver_output_data.signal_type_piezo_1 = np.uint8(0)     # TODO: Add signal type selection
+            self.driver_output_data.signal_type_piezo_2 = np.uint8(0)     # TODO: Add signal type selection
+            self.driver_output_data.piezo_1_freq_hz     = np.float32(self.piezo_1_freq_slider.value())
+            self.driver_output_data.piezo_1_vpp         = np.float32(self.piezo_1_amp_slider.value())
+            self.driver_output_data.piezo_1_phase_deg   = np.float32(self.piezo_1_phase_slider.value())
+            self.driver_output_data.piezo_2_freq_hz     = np.float32(self.piezo_2_freq_slider.value())
+            self.driver_output_data.piezo_2_vpp         = np.float32(self.piezo_2_amp_slider.value())
+            self.driver_output_data.piezo_2_phase_deg   = np.float32(self.piezo_2_phase_slider.value())
+            self.driver_output_data.piezo_1_enable      = np.bool_(self.piezo_1_enable_button.isChecked())
+            self.driver_output_data.piezo_2_enable      = np.bool_(self.piezo_2_enable_button.isChecked())
+            
+            # Update the monitor elements
+            self.monitor_output_data.reset_time                     = np.bool_(reset_time)
+            self.monitor_output_data.heater_block_enable            = np.bool_(self.heater_block_enable_button.isChecked())
+            self.monitor_output_data.rope_heater_enable             = np.bool_(self.rope_enable_button.isChecked())
+            self.monitor_output_data.heat_flux                      = np.float32(self.heat_flux_slider.value())
+            self.monitor_output_data.inlet_fluid_temp_setpoint_c    = np.float32(45)      # TODO: Get this from the GUI
     
-    # """Regenerate the frames if the freq slider changes"""
-    # def regenerate_mesh_and_point_frames(self):
-    #     # Generate the new frames
-    #     self.mesh_frame_generator.generate_frames(float(self.freq_slider.value()), self.point_slider.point_number, True, True)
-    #     self.regen_frames = True
-    #     # Clear the window of all meshes
-    #     self.mesh_animation_visualizer.clear_geometries()    
-    #     # Update the renderer
-    #     self.mesh_animation_visualizer.poll_events()
-    #     self.mesh_animation_visualizer.update_renderer()
-
-    # """Regenerate the frames if the point slider changes"""
-    # def regenerate_point_frames(self):
-    #     # Generate the new frames (points only)
-    #     self.mesh_frame_generator.generate_frames(float(self.freq_slider.value()), self.point_slider.point_number, False, True)
-    #     self.regen_frames = True
-    #     # Clear the window of all meshes
-    #     self.mesh_animation_visualizer.clear_geometries()    
-    #     # Update the renderer
-    #     self.mesh_animation_visualizer.poll_events()
-    #     self.mesh_animation_visualizer.update_renderer()
-        
-    # """Update the mesh animation when the frequency slider is modified"""
-    # def update_mesh_animation(self):
-    #     #print(f"updating mesh {self.current_frame_number}")
-
-    #     # Save the camera view
-    #     if not self.regen_frames:
-    #         self.camera_view = self.mesh_animation_visualizer.get_view_control().convert_to_pinhole_camera_parameters()
-    #     else:
-    #         self.regen_frames = False
-
-    #     # Set mesh and update the geometry
-    #     # for mesh in self.mesh_frame_generator.animation_mesh_frames:
-    #     #     self.mesh_animation_visualizer.remove_geometry(mesh)
-    #     self.mesh_animation_visualizer.clear_geometries()
-    #     self.mesh_animation_visualizer.add_geometry(self.mesh_frame_generator.animation_mesh_frames[self.current_frame_number])
-    #     self.mesh_animation_visualizer.add_geometry(self.mesh_frame_generator.animation_point_frames[self.current_frame_number])
-    #     for mesh in self.mesh_frame_generator.animation_mesh_frames:
-    #         self.mesh_animation_visualizer.update_geometry(mesh)
-    #     for pcd in self.mesh_frame_generator.animation_point_frames:
-    #         self.mesh_animation_visualizer.update_geometry(pcd)
-        
-    #     # Set camera view and update renderer
-    #     if not self.start_of_animation:
-    #         self.mesh_animation_visualizer.get_view_control().convert_from_pinhole_camera_parameters(self.camera_view)
-    #     else:
-    #         self.start_of_animation = False
-        
-    #     #self.mesh_animation_visualizer.get_view_control().convert_from_pinhole_camera_parameters(camera_view)
-    #     self.mesh_animation_visualizer.get_render_option().mesh_show_back_face = True
-    #     self.mesh_animation_visualizer.get_render_option().mesh_show_wireframe = True
-    #     self.mesh_animation_visualizer.get_render_option().light_on = True
-    #     self.mesh_animation_visualizer.get_render_option().background_color = np.asarray([0.1, 0.1, 0.1])
-    #     self.mesh_animation_visualizer.get_render_option().mesh_shade_option = o3d.visualization.MeshShadeOption.Color
-    #     self.mesh_animation_visualizer.get_render_option().show_coordinate_frame = True
-    #     #self.mesh_animation_visualizer.get_render_option().ground_plane_visibility = True
-    #     self.mesh_animation_visualizer.poll_events()
-    #     self.mesh_animation_visualizer.update_renderer()
-        
-    #     # Set current frame num, if over the number of frames, loop back to 0
-    #     # self.current_frame_number += 1
-    #     # if self.current_frame_number == self.mesh_frame_generator.animation_steps:
-    #     #     self.current_frame_number = 0
-    #     self.current_frame_number = (self.current_frame_number + 1) % self.mesh_frame_generator.animation_steps
-    #     self.current_frame_number = 0           # Basically pause animation at max amplitude
-    #     #print(self.current_frame_number)
+   
+   
         
 
 if __name__ == '__main__':

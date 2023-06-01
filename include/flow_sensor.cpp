@@ -3,16 +3,9 @@
 
 // Begin the wire interface for the sensor
 void FlowSensor::begin(){
-	_wire->setClock(100 * 1000U);		// Set the clock speed to x * 1kHz
-	// _wire->setSDA(_sdaPin);
-	// _wire->setSCL(_sclPin);
-	_wire->begin();
+	_wire->begin();		// Uses the onboard I2C pins by default, as well as clock speed
 }
 
-// // Run the printStatus function to print the status of the I2C bus
-// void FlowSensor::printStatus(Print& Ser){
-// 	_wire->printStatus(Ser);
-// }
 
 // Soft reset function which takes the Wire object as an argument
 void FlowSensor::soft_reset(){

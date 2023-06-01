@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from os import name
 import numpy as np
 
 
@@ -54,6 +55,7 @@ Note: The struct_def MUST be a dictionary with the following format:
 class ETDataArrays:
     struct_def: dict[str, np.dtype]         # This is the dictionary which defines the data structure
     max_elements: int                       # This is the default size of the numpy arrays, set when initializing the class    
+    name: str                               # This is the name of the class, used in saving the data to a file as default
     io_count: int = 0                       # This is the number of elements in the numpy arrays which have been filled, keep at zero when initializing the class
     
     def __post_init__(self):
@@ -91,7 +93,9 @@ class ETDataArrays:
 @dataclass
 class ETData:
     struct_def: dict[str, np.dtype]         # This is the dictionary which defines the data structure of the input/output data
-    io_count: int = 0
+    name: str                               # This is the name of the class, used in saving the data to a file as default
+    io_count: int = 0                       # This is the number of elements in the numpy arrays which have been filled, keep at zero when initializing the class
+    
     def __post_init__(self):
         # Set the attributes of the class to match the struct_def and init the numpy arrays
         for variable, _dtype in self.struct_def.items():
