@@ -53,9 +53,6 @@ const uint8_t THERMISTOR_PINS[] = {
 // Status LED pins, synced with Driver and MEGA Status LED
 const int STATUS_PIN = 32;  // External status LED pin
 
-// Mega measure flow trigger pin
-const uint8_t MEGA_MEASURE_FLOW_TRIGGER_PIN = 6;  // External status LED pin
-
 // SPI Pins (hardware SPI)
 uint8_t SPI_MOSI = MOSI;
 uint8_t SPI_MISO = MISO;
@@ -66,13 +63,5 @@ uint8_t INLET_FLUID_THERMOCOUPLE_CS_PIN = 37;
 uint8_t HEATER_BLOCK_RELAY_CONTROL_PIN = 4;       // PWM capable necessary
 uint8_t ROPE_HEATER_RELAY_CONTROL_PIN = 3;        // PWM capable, not used in code tho
 
-// TFT display pins (use SPI mode)
-uint8_t TFT_CS = 10;          // Chip select control pin for hardware SPI
-uint8_t TFT_DC = 30;          // Data/command pin
-uint8_t TFT_RST = 9;
-uint8_t TOUCH_YP = A12;       // Must be analog pin
-uint8_t TOUCH_XP = A13;       // Must be analog pin
-uint8_t TOUCH_YM = 28;        // Can be digital pin
-uint8_t TOUCH_XM = 29;        // Can be digital pin
 
 #endif

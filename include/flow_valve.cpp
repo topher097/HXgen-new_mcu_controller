@@ -31,8 +31,22 @@ void FlowValve::calculate_inlet_flow_rate(){
 // Measure and calculate the pressures of the pressure transducers across the valve
 void FlowValve::measure_pressures(){
     // Measure the pressure transducer voltages
-    inlet_pressure_upstream_raw = analog_dc->newAnalogRead(UPSTREAM_PRESSURE_SENSOR_PIN);
-    inlet_pressure_downstream_raw = analog_dc->newAnalogRead(DOWNSTREAM_PRESSURE_SENSOR_PIN);
+    int upstream_negative_reading = analogRead(UPSTREAM_NEG_PIN);
+    int upstream_positive_reading = analogRead(UPSTREAM_POS_PIN);
+    int downstream_negative_reading = analogRead(DOWNSTREAM_NEG_PIN);
+    int downstream_positive_reading = analogRead(DOWNSTREAM_POS_PIN);
+
+    // Calculat the differential signal
+    inlet_pressure_upstream_raw = abs(upstream_positive_reading - upstream_negative_reading);
+    inlet_pressure_downstream_raw = abs(downstream_positive_reading - downstream_negative_reading);
+
+    Serial.print("Up neg: "); Serial.print(upstream_negative_reading); Serial.print("\t"); 
+    Serial.print("Up pos: "); Serial.print(upstream_positive_reading); Serial.print("\t");
+    Serial.print("Down neg: "); Serial.print(downstream_negative_reading); Serial.print("\t");
+    Serial.print("Down pos: "); Serial.print(downstream_positive_reading); Serial.print("\t");
+    Serial.print("Up raw: "); Serial.print(inlet_pressure_upstream_raw); Serial.print("\t");
+    Serial.print("Down raw: "); Serial.print(inlet_pressure_downstream_raw); Serial.print("\t");
+    //Serial.println();
     
     // Convert the pressure transducer voltages to pressures in psi
     inlet_pressure_upstream = map(inlet_pressure_upstream_raw, 0, max_pressure_analog, 0, max_pressure_psi);
@@ -42,5 +56,5 @@ void FlowValve::measure_pressures(){
 
 // Measure the potentiometer value
 void FlowValve::measure_potentiometer(){
-    potentiometer_value = analog_dc->newAnalogRead(VALVE_POTENTIOMETER_PIN);  
+    potentiometer_value = analogRead(POTENTIOMETER_PIN);  
 }

@@ -1,26 +1,16 @@
-#ifndef _CONFIG_H
-#define _CONFIG_H
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
 
 #pragma once
 #include <Arduino.h> 
 #include <data_transfer.h>          // Brings dataSave and dataDriver structs into scope
-
-#if DEVICE == 0                 // Mega flow
-    #include <pins_mega.h>
-#endif
-#if DEVICE == 1                 // Teensy 4.0 (driver)
-    #include <pins_driver.h>
-#endif
-#if DEVICE == 2                 // Teensy 4.1 (monitor)
-    #include <pins_monitor.h>
-#endif
 
 
 // -----------------------------------------------------------------------------
 // Flow sensor specific settings, adjust if needed:
 // -----------------------------------------------------------------------------
 const int FLOW_SENSOR_ADDRESS = 0x08;               // Sensor I2C Address for BOTH inlet and outlet sensors, using separate I2C busses for each sensor
-const float SCALE_FACTOR_FLOW = 500.0;              // Scale Factor for flow rate measurement
+const float SCALE_FACTOR_FLOW = 32.0;              // Scale Factor for flow rate measurement
 const float SCALE_FACTOR_TEMP = 200.0;              // Scale Factor for temperature measurement
 const char UNIT_FLOW[] = " ml/min";                 // physical unit of the flow rate measurement
 const char UNIT_TEMP[] = " deg C";                  // physical unit of the temperature measurement
@@ -33,7 +23,7 @@ float outlet_flow_sensor_ml_min;           // mL/min from the outlet flow sensor
 // Rope heater control specific settings, adjust if needed:
 // -----------------------------------------------------------------------------
 float rope_Kp = 10.0;
-float rope_Ki = 0.0;
+float rope_Ki = 0.01;
 float rope_Kd = 0.25;
 float inlet_fluid_temp_setpoint = 50;              // Setpoint for the inlet fluid temperature, can change this on the screen
 float inlet_fluid_temp_max = 60;
@@ -70,8 +60,8 @@ bool wait_for_serial = false;            // wait for serial connection before st
 uint16_t measure_and_send_data_delay_ms = 1000/20;        // delay between sending data over serial port in ms
 
 // Analog (ADC) settings
-const int16_t analog_resolution = 10;                          // bits of resolution on ADC measurements
-const int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
+int16_t analog_resolution = 12;                          // bits of resolution on ADC measurements
+int16_t max_analog = pow(2, analog_resolution)-1;        // Max analog resolution 2^(analog_resolution)-1 = 4095 for 12 bit, 2047 for 11 bit, 1023 for 10 bit
 const float analog_vref = 3.3;                                 // Analog reference voltage, 5.0V for ArduinoMega2560      
 
 // Min and max values for the conversion functions
@@ -135,6 +125,7 @@ float calculate_thermistor_resistance(int analogReadValue, int maxAnalogRead, fl
     float thermistorResistance = seriesResistor / (maxAnalogRead / float(analogReadValue) - 1.0);
     return thermistorResistance;
 }
+
 
 // Function to estimate temperature using the lookup table
 float lookup_thermistor_temperature(float resistance) {

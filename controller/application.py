@@ -30,14 +30,14 @@ import qasync
 # -------------------- Piezo attributes --------------------
 # Frequency
 piezo_min_freq = 150
-piezo_max_freq = 5000
+piezo_max_freq = 15000
 piezo_freq_step = 5
-piezo_default_freq = 500
+piezo_default_freq = 2000
 # Amplitude
 piezo_min_vpp = 0.0
-piezo_max_vpp = 120.0
+piezo_max_vpp = 150.0
 piezo_vpp_step = 1
-piezo_default_vpp = 5.0
+piezo_default_vpp = 100.0
 # Phase
 piezo_min_phase = 0.0
 piezo_max_phase = 360.0
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
                  loop: qasync.QEventLoop, 
                  log: logging.Logger, 
                  monitor_serial_interface: PyEasyTransfer,
-                 driver_serial_interface: PyEasyTransfer, 
+                 driver_serial_interface: PyEasyTransfer,
                  input_data_rate: int, 
                  test_time: int, 
                  *args, **kwargs):
@@ -363,59 +363,7 @@ class MainWindow(QMainWindow):
         # Create a layout for the two plots
         self.plot_layout = pg.GraphicsLayoutWidget(show=True)
         
-        # Add the two plots
-        self.thermistor_plot = self.plot_layout.addPlot(row=0, col=0)
-        self.flow_sensor_plot = self.plot_layout.addPlot(row=1, col=0)
-        
-        # Create the data numpy arrays
-        self.num_elements_plot = self.input_data_rate * self.plot_x_time_limit
-        self.num_thermistors = 12
-        self.monitor_time_data = np.empty(shape=(self.num_elements_plot))                          # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
-        self.driver_time_data = np.empty(shape=(self.num_elements_plot))                           # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
-        self.thermistor_data = np.empty(shape=(self.num_thermistors, self.num_elements_plot))      # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
-        self.flow_sensor_data = np.empty(shape=(2, self.num_elements_plot))                   # Each time the flow sensor is read, the data shifted using np.roll and is added to the end of this array
-        
-        # Set background color of plots
-        vb1 = self.thermistor_plot.getViewBox()
-        vb1.setBackgroundColor('w')
-        vb2 = self.flow_sensor_plot.getViewBox()
-        vb2.setBackgroundColor('w')
-        
-        # Set the plot attributes
-        self.thermistor_plot.showGrid(x=True, y=True)  # Show grid
-        self.thermistor_plot.setLabel('left', 'Temperature', units='°C')  # Set y-axis label
-        self.thermistor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
-        self.thermistor_plot.setTitle('Thermistor Temperature vs. Time')  # Set plot title
-        self.thermistor_plot.setLimits(yMin=20, yMax=150)  # Set y-axis limits
-        self.thermistor_plot.addLegend(offset=(-1, 1))  # Set legend offset
-        
-        self.flow_sensor_plot.showGrid(x=True, y=True)  # Show grid
-        self.flow_sensor_plot.setLabel('left', 'Flow Rate', units='mL/min')  # Set y-axis label
-        self.flow_sensor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
-        self.flow_sensor_plot.setTitle('Flow Sensor Flow Rate vs. Time')  # Set plot title
-        self.flow_sensor_plot.setLimits(yMin=0, yMax=1000)  # Set y-axis limits
-        self.flow_sensor_plot.addLegend(offset=(-1, 1))  # Set legend offset
-        
-        # Create the curve objects
-        colors = [
-            (255, 100, 50),     # Orange
-            (255, 100, 200),    # Pink
-            (255, 0, 0),        # Red
-            (255, 255, 0),      # Yellow
-            (0, 255, 0),        # Green
-            (0, 255, 255),      # Cyan
-            (0, 0, 255),        # Blue
-            (255, 0, 255),      # Magenta
-            (0, 0, 0),          # Black
-            (200, 200, 255),    # Sky Blue
-            (255, 200, 200),    # Salmon
-            (200, 255, 200),    # Spring green           
-        ]
-        line_width = 2
-        self.thermistor_curves = [self.thermistor_plot.plot(pen=pg.mkPen(color=colors[i], width=line_width), name=f"Thermistor {i+1}") for i in range(self.num_thermistors)]
-        fs_inlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[0], width=line_width), name="Inlet Flow Sensor")
-        fs_outlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[1], width=line_width), name="Outlet Flow Sensor")
-        self.flow_sensor_curves = [fs_inlet, fs_outlet]
+        self.create_plot_items()
         
         # Add these PlotItems to a QWidget
         self.plot_widget = QWidget()
@@ -456,6 +404,22 @@ class MainWindow(QMainWindow):
         heater_block_temp_layout.setStretch(0, 0)
         self.heater_block_temp_widget = CentralWidget()
         self.heater_block_temp_widget.setLayout(heater_block_temp_layout)
+        
+        # Create a gauge for the inlet temperature
+        self.inlet_temp_gauge = QSlider(Qt.Horizontal, self)
+        self.inlet_temp_gauge.setMinimum(20)
+        self.inlet_temp_gauge.setMaximum(70)
+        self.inlet_temp_gauge.setTickInterval(1)
+        self.inlet_temp_gauge.setValue(20)
+        self.inlet_temp_gauge.setEnabled(True)
+        self.inlet_temp_gauge_label = QLabel(f"Inlet Temp: {self.inlet_temp_gauge.value} (°C)", self)
+        inlet_temp_layout = QVBoxLayout()
+        inlet_temp_layout.addWidget(self.inlet_temp_gauge_label)
+        inlet_temp_layout.addWidget(self.inlet_temp_gauge)
+        inlet_temp_layout.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        inlet_temp_layout.setStretch(0, 0)
+        self.inlet_temp_widget = CentralWidget()
+        self.inlet_temp_widget.setLayout(inlet_temp_layout)        
 
         
         # Craete an emergency stop button for the heaters and stop the recording on teensy
@@ -500,6 +464,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.preheat_button)                  # Add the preheat button to the right layout
         right_layout.addWidget(self.heat_flux_widget)               # Add the heat flux widget to the right layout
         right_layout.addWidget(self.heater_block_temp_widget)       # Add the heater block temperature widget to the right layout
+        right_layout.addWidget(self.inlet_temp_widget)              # Add the inlet temperature widget to the right layout
         right_layout.addWidget(self.heater_block_enable_button)     # Add the heater block enable button to the right layout
         right_layout.addWidget(self.rope_enable_button)             # Add the rope heater enable button to the right layout
         right_layout.addWidget(self.emergency_stop_button)          # Add the emergency stop button to the right layout
@@ -608,7 +573,7 @@ class MainWindow(QMainWindow):
         
         # Connect the signals for the temperature of heater block 
         self.heater_block_temp_gauge.valueChanged.connect(self.update_heater_block_temp_gauge_label)
-        
+        self.inlet_temp_gauge.valueChanged.connect(self.update_inlet_temp_gauge_label)
         # Connect the signals for the rope heater slider
         self.rope_temp_slider.valueChanged.connect(self.update_rope_temp_slider_label)
         
@@ -647,7 +612,12 @@ class MainWindow(QMainWindow):
         # Create a timer to update the heater block temp gauge
         self.heater_block_temp_gauge_timer = QTimer(self)
         self.heater_block_temp_gauge_timer.timeout.connect(self.update_heater_block_temp_gauge)
-        self.heater_block_temp_gauge_timer.start(500)      # Update the plot every 200 ms
+        self.heater_block_temp_gauge_timer.start(500)      # Update the gauge every 500 ms
+        
+        # Create a timer to update the inlet temperature gauge
+        self.inlet_temp_gauge_timer = QTimer(self)
+        self.inlet_temp_gauge_timer.timeout.connect(self.update_inlet_temp_gauge)
+        self.inlet_temp_gauge_timer.start(500)      # Update the gauge every 500 ms
         
         # Create a timer to update the test time
         self.test_time_timer = QTimer(self)
@@ -670,6 +640,7 @@ class MainWindow(QMainWindow):
         self.update_heat_flux_slider_label(self.heat_flux_slider.value())
         
         self.update_heater_block_temp_gauge_label(self.heater_block_temp_gauge.value())
+        self.update_inlet_temp_gauge_label(self.inlet_temp_gauge.value())
     
         
     def update_elements_from_teensy_input_data(self):
@@ -702,6 +673,11 @@ class MainWindow(QMainWindow):
         """Updates the heater block temp gauge via timer"""
         heat_block_temp = np.average((self.monitor_input_data.thermistor_13_temp_c, self.monitor_input_data.thermistor_14_temp_c))
         self.update_heater_block_temp_gauge_value(heat_block_temp)
+        
+    def update_inlet_temp_gauge(self):
+        """Updates the inlet temp gauge via timer"""
+        inlet_temp = self.monitor_input_data.inlet_fluid_temp_c
+        self.update_inlet_temp_gauge_value(inlet_temp)
      
     @qasync.asyncSlot()   
     async def update_test_time(self):
@@ -740,6 +716,60 @@ class MainWindow(QMainWindow):
             self.enable_all_elements()
             self.test_time_timer.stop()
 
+    def create_plot_items(self):
+        # Add the two plots
+        self.thermistor_plot = self.plot_layout.addPlot(row=0, col=0)
+        self.flow_sensor_plot = self.plot_layout.addPlot(row=1, col=0)
+        
+        # Create the data numpy arrays
+        self.num_elements_plot = self.input_data_rate * self.plot_x_time_limit
+        self.num_thermistors = 12
+        self.monitor_time_data = np.empty(shape=(self.num_elements_plot))                          # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.driver_time_data = np.empty(shape=(self.num_elements_plot))                           # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.thermistor_data = np.empty(shape=(self.num_thermistors, self.num_elements_plot))      # Each time the thermistor is read, the data shifted using np.roll and is added to the end of this array
+        self.flow_sensor_data = np.empty(shape=(2, self.num_elements_plot))                   # Each time the flow sensor is read, the data shifted using np.roll and is added to the end of this array
+        
+        # Set background color of plots
+        vb1 = self.thermistor_plot.getViewBox()
+        vb1.setBackgroundColor('w')
+        vb2 = self.flow_sensor_plot.getViewBox()
+        vb2.setBackgroundColor('w')
+        
+        # Set the plot attributes
+        self.thermistor_plot.showGrid(x=True, y=True)  # Show grid
+        self.thermistor_plot.setLabel('left', 'Temperature', units='°C')  # Set y-axis label
+        self.thermistor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
+        self.thermistor_plot.setTitle('Thermistor Temperature vs. Time')  # Set plot title
+        self.thermistor_plot.setLimits(yMin=20, yMax=150)  # Set y-axis limits
+        self.thermistor_plot.addLegend(offset=(-1, 1))  # Set legend offset
+        
+        self.flow_sensor_plot.showGrid(x=True, y=True)  # Show grid
+        self.flow_sensor_plot.setLabel('left', 'Flow Rate', units='mL/min')  # Set y-axis label
+        self.flow_sensor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
+        self.flow_sensor_plot.setTitle('Flow Sensor Flow Rate vs. Time')  # Set plot title
+        self.flow_sensor_plot.setLimits(yMin=0, yMax=1000)  # Set y-axis limits
+        self.flow_sensor_plot.addLegend(offset=(-1, 1))  # Set legend offset
+        
+        # Create the curve objects
+        colors = [
+            (255, 100, 50),     # Orange
+            (255, 100, 200),    # Pink
+            (255, 0, 0),        # Red
+            (255, 255, 0),      # Yellow
+            (0, 255, 0),        # Green
+            (0, 255, 255),      # Cyan
+            (0, 0, 255),        # Blue
+            (255, 0, 255),      # Magenta
+            (0, 0, 0),          # Black
+            (200, 200, 255),    # Sky Blue
+            (255, 200, 200),    # Salmon
+            (200, 255, 200),    # Spring green           
+        ]
+        line_width = 2
+        self.thermistor_curves = [self.thermistor_plot.plot(pen=pg.mkPen(color=colors[i], width=line_width), name=f"Thermistor {i+1}") for i in range(self.num_thermistors)]
+        fs_inlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[0], width=line_width), name="Inlet Flow Sensor")
+        fs_outlet = self.flow_sensor_plot.plot(pen=pg.mkPen(color=colors[1], width=line_width), name="Outlet Flow Sensor")
+        self.flow_sensor_curves = [fs_inlet, fs_outlet]
         
     def update_plots_from_teensy_input_data(self):
         """Updates the plots from the latest Teensy input data, not necessarily when Teensy data is received and stored
@@ -748,24 +778,42 @@ class MainWindow(QMainWindow):
         self.mutex.lock()
         try:
             # First check and see if the time has been reset, if so, reset the plots
-            if self.monitor_input_data.time_ms < self.monitor_time_data[-1]: 
-                self.thermistor_plot.clear()
-                for curve in self.thermistor_curves:
-                    self.thermistor_plot.removeItem(curve)
-                # Reset the time and data arrays
-                self.monitor_time_data[:] = 0
-                self.thermistor_data[:, :] = 0
-                vb1 = self.thermistor_plot.getViewBox()
-                #vb1.clear()
-            if self.driver_input_data.time_ms < self.driver_time_data[-1]:
-                self.flow_sensor_plot.clear()
-                for curve in self.flow_sensor_curves:
-                    self.flow_sensor_plot.removeItem(curve)
-                # Reset the time and data arrays
-                self.driver_time_data[:] = 0        
-                self.flow_sensor_data[:, :] = 0
-                vb2 = self.flow_sensor_plot.getViewBox()
-                #vb2.clear()
+            monitor_time_reset = self.monitor_input_data.time_ms < self.monitor_time_data[-1]
+            driver_time_reset = self.driver_input_data.time_ms < self.driver_time_data[-1]
+            
+            if monitor_time_reset or driver_time_reset:
+                self.plot_layout.removeItem(self.thermistor_plot)
+                self.plot_layout.removeItem(self.flow_sensor_plot)
+                self.create_plot_items()        # Reset the plots
+            
+            # if monitor_time_reset or driver_time_reset:
+            # if self.monitor_input_data.time_ms < self.monitor_time_data[-1]: 
+            #     self.thermistor_plot.clear()
+            #     for curve in self.thermistor_curves:
+            #         self.thermistor_plot.removeItem(curve)
+            #     # Reset the time and data arrays
+            #     self.monitor_time_data[:] = 0
+            #     self.thermistor_data[:, :] = 0
+            #     vb1 = self.thermistor_plot.getViewBox()
+            #     #vb1.clear()
+            # if self.driver_input_data.time_ms < self.driver_time_data[-1]:
+            #     self.flow_sensor_plot.clear()
+            #     for curve in self.flow_sensor_curves:
+            #         self.flow_sensor_plot.removeItem(curve)
+            #     # Reset the time and data arrays
+            #     self.driver_time_data[:] = 0        
+            #     self.flow_sensor_data[:, :] = 0
+            #     vb2 = self.flow_sensor_plot.getViewBox()
+            #     #vb2.clear()
+            # if self.valve_input_data.time_ms < self.valve_time_data[-1]:
+            #     self.flow_sensor_plot.clear()
+            #     for curve in self.flow_sensor_curves:
+            #         self.flow_sensor_plot.removeItem(curve)
+            #     # Reset the time and data arrays
+            #     self.valve_time_data[:] = 0        
+            #     self.flow_sensor_data[:, :] = 0
+            #     vb2 = self.flow_sensor_plot.getViewBox()
+            #     #vb2.clear()
             
             # Update the thermistor plot
             if not (self.last_io_count_monitor == self.monitor_input_data.io_count):
@@ -823,7 +871,7 @@ class MainWindow(QMainWindow):
                 # Get the time of the latest data
                 self.driver_time_data[:-1] = self.driver_time_data[1:]                            # shift the time data in the array one sample left
                 self.driver_time_data[-1] = np.round(self.driver_input_data.time_ms/1000, 3)      # add the latest time data to the end of the array, this is in seconds
-
+                
                 # Get the min and max value of the time for updating the X limits of the plots
                 if self.driver_time_data[-1]-self.driver_time_data[0] > self.plot_x_time_limit:
                     min_time = self.driver_time_data[-1]-self.plot_x_time_limit
@@ -837,7 +885,7 @@ class MainWindow(QMainWindow):
                 self.flow_sensor_plot.setXRange(min_time, max_time, padding=0.0)            
                 
                 # For each curve in self.flow_sensor_curves, update the data in self.flow_sensor_data given the latest Teensy input data
-                flow_rates = [self.driver_input_data.inlet_flow_sensor_ml_min,
+                flow_rates   = [self.driver_input_data.inlet_flow_sensor_ml_min,
                                 self.driver_input_data.outlet_flow_sensor_ml_min]
                 
                 for curve_num in range(len(self.flow_sensor_curves)):
@@ -895,6 +943,10 @@ class MainWindow(QMainWindow):
     def update_heater_block_temp_gauge_label(self, value):
         self.heater_block_temp_gauge_label.setText(f"Heat Block Temp: {value} (°C)")
         #self.log.info(f"Heat block temperature label update: {value} (°C)")
+        
+    def update_inlet_temp_gauge_label(self, value):
+        self.inlet_temp_gauge_label.setText(f"Inlet Temp: {value} (°C)")
+        #self.log.info(f"Inlet temperature label update: {value} (°C)")
     
     """ Update the element values """
     def update_piezo_1_freq_slider_value(self, value):
@@ -932,6 +984,10 @@ class MainWindow(QMainWindow):
     def update_heater_block_temp_gauge_value(self, value):
         self.heater_block_temp_gauge.setValue(value)
         #self.log.info(f"Heater block temp guage update, temperature: {value} (°C)")
+        
+    def update_inlet_temp_gauge_value(self, value):
+        self.inlet_temp_gauge.setValue(value)
+        #self.log.info(f"Inlet temp guage update, temperature: {value} (°C)")
         
     """ Update button states """
     def update_start_test_button(self, state):
@@ -1011,7 +1067,7 @@ class MainWindow(QMainWindow):
         self.update_output_ETdata(emergency=False)      # Init values if needed
         self.update_output_ETdata(emergency=True)
         await self.ET_driver.send_data()
-        await self.ET_monitor.send_data()        
+        await self.ET_monitor.send_data()       
         await asyncio.sleep(1)
         self.emergency_stop_button.setChecked(False)
         self.emergency_stop_button.setText("Emergency Stop")
@@ -1108,6 +1164,7 @@ class MainWindow(QMainWindow):
             #         else:
             #             setattr(self, variable, 0)    
         else:
+           
             # Update the driver elements
             self.driver_output_data.reset_time          = np.bool_(reset_time)
             self.driver_output_data.signal_type_piezo_1 = np.uint8(0)     # TODO: Add signal type selection

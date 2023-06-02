@@ -76,4 +76,18 @@ struct __attribute__((packed)) dataPCtoDriver {
     float piezo_1_phase;        // Phase of left channel signal in degrees
     float piezo_2_phase;        // Phase of right channel signal in degrees
 } pc_to_driver_data;
+
+
+// ------------------------- VALVE AND PC DATA STRUCTS ------------------------- //
+struct __attribute__((packed)) dataValveToPC {
+    uint32_t time_ms;               // Time in milliseconds since the program started
+    uint32_t time_us;               // Time in microseconds since the program started
+    float valve_flow_rate_ml_min;   // Flow rate of the valve in mL/min
+} valve_to_pc_data;
+
+struct __attribute__((packed)) dataPCtoValve {
+    bool reset_time;            // Reset the time to 0
+} pc_to_valve_data;
+
+
 #endif // _DATA_H_

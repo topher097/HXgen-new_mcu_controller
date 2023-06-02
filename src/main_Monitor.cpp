@@ -15,11 +15,11 @@ Main file for the Teensy 4.1 that:
 
 // Library includes
 #include <Arduino.h>
-#include <Adafruit_HX8357.h>		// TFT display library
 #include <Adafruit_MAX31855.h>		// Thermocouple library
 #include <timer.h>					// Timer library
 #include <QuickPID.h>				// PID library
 #include <EasyTransfer.h>			// EasyTransfer library
+#include <Wire.h>					// I2C library
 
 // Local includes
 #include "config.h"
@@ -51,6 +51,7 @@ QuickPID ropePID(&inlet_fluid_temp_measured, &rope_control_output, &inlet_fluid_
 // Create timers
 Timer statusLEDTimer;
 Timer measureSensorsAndSendDataTimer;
+Timer measureThermocoupleTimer;
 uint16_t measure_count = 0;
 
 
@@ -61,9 +62,13 @@ void blink_status_led() {
 }
 
 
+// Measure the thermocouple
+void measure_thermocouple() {
+	inlet_fluid_temp_measured = (float)thermocouple.readCelsius();   	// Cast to float from double
+}
+
 // Measure the flow sensors (callback function for the timer)
-void measure_sensors() {
-	// -------------------------- THERMISTORS --------------------------
+void measure_sensors() {	// -------------------------- THERMISTORS --------------------------
 	// Measure the thermistors, average over 3 readings
 	uint8_t num_average = 3;
 	for (int i = 0; i < NUM_THERMISTORS; i++) {
@@ -75,11 +80,7 @@ void measure_sensors() {
 		thermistor_reading /= num_average;
 		// Calculate the temperature for the given thermistor
 		thermistor_temps[i] = convert_thermistor_analog_to_celcius(thermistor_reading, max_analog, analog_vref, thermistor_R1);
-	}
-	
-	// -------------------------- INLET FLUID THERMOCOUPLE --------------------------
-	// Measure the temperature of the inlet fluid (thermocouple)			
-	inlet_fluid_temp_measured = (float)thermocouple.readCelsius();   	// Cast to float from double
+	} 	// Cast to float from double
 }
 
 
@@ -145,7 +146,7 @@ void fast_led_blink(){
 // -------------------------------- SETUP --------------------------------
 void setup() {
 	// Initialise the EasyTransfer objects
-	PC_COMMUNICATION.begin(BAUDRATE);
+	PC_COMMUNICATION.begin(BAUD_RATE);
 	ETout_pc.begin(details(monitor_to_pc_data), &PC_COMMUNICATION);
 	ETin_pc.begin(details(pc_to_monitor_data), &PC_COMMUNICATION);
 
@@ -161,14 +162,14 @@ void setup() {
 	// --------------------------- ANALOG SETTINGS SETUP ---------------------------
 	// Set the ADC settings
 	analogReadResolution(analog_resolution);		// Set the ADC resolution to n bits (set in config.h)
-	analogReference(analog_vref);					// Set the ADC reference voltage to 3.3V rather than 5V, using external power supply set to 3.3V via oscilliscope reading
-	analogWriteResolution(10);		// Set the DAC resolution to n bits (set in config.h)
+	//analogReference(analog_vref);					// Set the ADC reference voltage to 3.3V rather than 5V, using external power supply set to 3.3V via oscilliscope reading
+	analogWriteResolution(analog_resolution);		// Set the DAC reso]  lution to n bits (set in config.h)
 	analogWriteFrequency(HEATER_BLOCK_RELAY_CONTROL_PIN, 100);	// Set the PWM frequency to 100 Hz
-	//analogWriteFrequency(ROPE_HEATER_RELAY_CONTROL_PIN, 2000);	// Set the PWM frequency to 20 kHz
+	//analogWriteFrequency(ROPE_HEATER_RELAY_CONTROL_PIN, 100);	// Set the PWM frequency to 100 kHz
 
 	// --------------------------- PIN SETUP ---------------------------	
 	// Setup the pins for the Teensy input and output
-	pinMode(HEATER_BLOCK_RELAY_CONTROL_PIN, OUTPUT);
+	// pinMode(HEATER_BLOCK_RELAY_CONTROL_PIN, OUTPUT);
 	pinMode(ROPE_HEATER_RELAY_CONTROL_PIN, OUTPUT);
 	pinMode(STATUS_PIN, OUTPUT);
     pinMode(THERMISTOR_1_INPUT_PIN, INPUT);
@@ -193,6 +194,9 @@ void setup() {
 	measureSensorsAndSendDataTimer.setInterval(measure_and_send_data_delay_ms, -1);
 	measureSensorsAndSendDataTimer.setCallback(send_data_to_pc);		// Measure sensors and send data to PC
 	measureSensorsAndSendDataTimer.start();
+	measureThermocoupleTimer.setInterval(500, -1);
+	measureThermocoupleTimer.setCallback(measure_thermocouple);		// Measure thermocouple
+	measureThermocoupleTimer.start();
 
 	// --------------------------- INLET FLUID TEMP PID SETUP ---------------------------
 	ropePID.SetOutputLimits(0, window_size_ms);
@@ -204,6 +208,7 @@ void loop() {
 	// --------------------------- Update the timer objects ---------------------------
 	statusLEDTimer.update();
 	measureSensorsAndSendDataTimer.update();
+	measureThermocoupleTimer.update();
 
 	// --------------------------- CHECK EASY TRANSFER IN DATA ---------------------------
 	new_data = false;		// Reset each loop, if something depends on new data to update, then put that later in the loop
@@ -223,17 +228,20 @@ void loop() {
 			if (ms_now > next_switch_time){
 				relay_status = true;
 				next_switch_time = ms_now + debounce_delay_ms;
+				//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, max_analog);		// Use analog write to replace digitla write high
 				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
 			}
 		} else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
 			if (ms_now > next_switch_time){
 				relay_status = false;
 				next_switch_time = ms_now + debounce_delay_ms;
+				//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
 				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
 			}
 		}
 	} else {
 		// Make sure the rope heater is off if it's disabled
+		//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
 		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
 	}
 

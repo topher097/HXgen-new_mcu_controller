@@ -16,7 +16,7 @@ Main file for the Teensy 4.0 that:
 
 // Custom includes
 #include <config.h>
-#include <data_transfer.h>
+//#include <data_transfer.h>
 #include <flow_sensor.cpp>
 #include <pins_driver.h>
 
@@ -36,7 +36,7 @@ const String outlet_string = "outlet";
 FlowSensor inlet_sensor(inlet_string, &Wire);
 FlowSensor outlet_sensor(outlet_string, &Wire1);
 
-// Timer for blink
+// Timers
 Timer statusLEDTimer;
 Timer measureSensorsAndSendDataTimer;
 
@@ -104,9 +104,9 @@ void fast_led_blink(){
 
 // Convert the piezo vpp to amplitude
 const float AUDIO_DRIVER_MIN_VPP = 0.0;  
-const float AUDIO_DRIVER_MAX_VPP = 1.44;    // This was measured at volume=1.0 and amplitude=1.0, max value, on oscilliscope
-const float AMPLIFIER_GAIN = 100.0;         // Gain of the amplifier
-const float MAX_AMPLIFIER_OUTPUT_VPP = 120.0;    // Max output of the amplifier (+/- 50V)
+const float AUDIO_DRIVER_MAX_VPP = 1.44;        // This was measured at volume=1.0 and amplitude=1.0, max value, on oscilliscope
+const float AMPLIFIER_GAIN = 100.0;             // Gain of the amplifier
+const float MAX_AMPLIFIER_OUTPUT_VPP = 150.0;   // Max output amplitude of the amplifier (+/- VPP/2)
 
 float calculate_amplitude_from_vpp(float piezo_vpp) {
     // Limit the piezo vpp to the max and min values
@@ -299,16 +299,12 @@ void update_piezo_2_signal(){
 void setup(){
     // --------------------------------- EASYTRANSFER SETUP ---------------------------------
     // Begin the serial port (for PC)
-    PC_COMMUNICATION.begin(BAUDRATE);
+    PC_COMMUNICATION.begin(BAUD_RATE);
     ETout_pc.begin(details(driver_to_pc_data), &PC_COMMUNICATION);
     ETin_pc.begin(details(pc_to_driver_data), &PC_COMMUNICATION);
 
-    // clear the serial port buffer
-	// if (PC_COMMUNICATION.available()) {
-	// 	PC_COMMUNICATION.read(); 
-	// }
-	// delay(100);
-    
+    pinMode(STATUS_PIN, OUTPUT);
+
     // --------------------------------- FLOW SENSORS SETUP ---------------------------------
     // Begin the flow sensors
     inlet_sensor.begin();
@@ -333,7 +329,12 @@ void setup(){
 
     // --------------------------------- AUDIO/WAVEFORM SETUP ---------------------------------
     // Init the signals to a sine wave, default values in the config.h file
-    sgtl5000_1.enable();
+    
+    if (!sgtl5000_1.enable()){
+        while (1){
+            fast_led_blink();
+        }
+    };
     sgtl5000_1.volume(1.0);
     AudioMemory(24);
     piezo_1_amplitude = calculate_amplitude_from_vpp(5);
