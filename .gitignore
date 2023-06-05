@@ -5,4 +5,5 @@
 .vscode/ipch
 .conda
 .venv
-logs/
+controller/logs/
+controller/data/

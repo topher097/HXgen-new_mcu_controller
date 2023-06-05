@@ -29,30 +29,31 @@ import qasync
 """ These are the limits to sliders and other variables """
 # -------------------- Piezo attributes --------------------
 # Frequency
-piezo_min_freq = 150
-piezo_max_freq = 15000
+piezo_default_signal_type = 4
+piezo_min_freq = 175
+piezo_max_freq = 5000
 piezo_freq_step = 5
-piezo_default_freq = 2000
+piezo_default_freq = 1000
 # Amplitude
 piezo_min_vpp = 0.0
-piezo_max_vpp = 150.0
+piezo_max_vpp = 300.00
 piezo_vpp_step = 1
-piezo_default_vpp = 100.0
+piezo_default_vpp = 200.0
 # Phase
 piezo_min_phase = 0.0
 piezo_max_phase = 360.0
-piezo_phase_step = 45/2
+piezo_phase_step = 45.0
 piezo_default_phase = 0.0
 # Enable
-piezo_1_enable = False
+piezo_1_enable = True
 piezo_2_enable = False
 
 # -------------------- Rope Heater attributes --------------------
 # Temperature
 rope_min_temp = 20
-rope_max_temp = 60
+rope_max_temp = 50
 rope_temp_step = 0.5
-rope_default_temp = 50
+rope_default_temp = 30
 rope_heat_enable = False
 
 # -------------------- Heater Block attributes --------------------
@@ -62,7 +63,7 @@ Heater_block_max_temp = 160     # If this is ever reached, the heater block shou
 heat_flux_min = 0
 heat_flux_max = 30
 heat_flux_step = 0.1
-heat_flux_default = 8
+heat_flux_default = 5
 heat_block_enable = False
 
 # -------------------- GUI attributes --------------------
@@ -747,7 +748,7 @@ class MainWindow(QMainWindow):
         self.flow_sensor_plot.setLabel('left', 'Flow Rate', units='mL/min')  # Set y-axis label
         self.flow_sensor_plot.setLabel('bottom', 'Time', units='s')  # Set x-axis label
         self.flow_sensor_plot.setTitle('Flow Sensor Flow Rate vs. Time')  # Set plot title
-        self.flow_sensor_plot.setLimits(yMin=0, yMax=1000)  # Set y-axis limits
+        self.flow_sensor_plot.setLimits(yMin=-300, yMax=1000)  # Set y-axis limits
         self.flow_sensor_plot.addLegend(offset=(-1, 1))  # Set legend offset
         
         # Create the curve objects
@@ -859,7 +860,7 @@ class MainWindow(QMainWindow):
                 # Update the y limits of ALL of the thermistor curves on the plot
                 min_y = np.min(self.thermistor_data)
                 max_y = np.max(self.thermistor_data)
-                padding = (min_y+max_y)/2 * 0.1     # Add 10% padding to the y limits
+                padding = (min_y+max_y)/2 * 0.03     # Add 3% padding to the y limits
                 self.thermistor_plot.setYRange(min_y, max_y, padding=padding)
                 #self.log.debug("Updated thermistor plot y limits to: " + str(min_y) + " to " + str(max_y))
 
@@ -1167,8 +1168,8 @@ class MainWindow(QMainWindow):
            
             # Update the driver elements
             self.driver_output_data.reset_time          = np.bool_(reset_time)
-            self.driver_output_data.signal_type_piezo_1 = np.uint8(0)     # TODO: Add signal type selection
-            self.driver_output_data.signal_type_piezo_2 = np.uint8(0)     # TODO: Add signal type selection
+            self.driver_output_data.signal_type_piezo_1 = np.uint8(piezo_default_signal_type)     # TODO: Add signal type selection
+            self.driver_output_data.signal_type_piezo_2 = np.uint8(piezo_default_signal_type)     # TODO: Add signal type selection
             self.driver_output_data.piezo_1_freq_hz     = np.float32(self.piezo_1_freq_slider.value())
             self.driver_output_data.piezo_1_vpp         = np.float32(self.piezo_1_amp_slider.value())
             self.driver_output_data.piezo_1_phase_deg   = np.float32(self.piezo_1_phase_slider.value())
@@ -1183,7 +1184,7 @@ class MainWindow(QMainWindow):
             self.monitor_output_data.heater_block_enable            = np.bool_(self.heater_block_enable_button.isChecked())
             self.monitor_output_data.rope_heater_enable             = np.bool_(self.rope_enable_button.isChecked())
             self.monitor_output_data.heat_flux                      = np.float32(self.heat_flux_slider.value())
-            self.monitor_output_data.inlet_fluid_temp_setpoint_c    = np.float32(45)      # TODO: Get this from the GUI
+            self.monitor_output_data.inlet_fluid_temp_setpoint_c    = np.float32(self.rope_temp_slider.value())   
     
    
    

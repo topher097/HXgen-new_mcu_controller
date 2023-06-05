@@ -41,12 +41,12 @@ elapsedMicros elapsed_micros;		// Microseconds since the Teensy started
 Adafruit_MAX31855 thermocouple(INLET_FLUID_THERMOCOUPLE_CS_PIN);   // Hardware SPI implementation
 
 // PID object for rope heater (https://github.com/Dlloydev/QuickPID/blob/master/examples/PID_RelayOutput/PID_RelayOutput.ino)
-QuickPID ropePID(&inlet_fluid_temp_measured, &rope_control_output, &inlet_fluid_temp_setpoint, 
-				 rope_Kp, rope_Ki, rope_Kd,
-				 QuickPID::pMode::pOnError,
-				 QuickPID::dMode::dOnMeas,
-				 QuickPID::iAwMode::iAwClamp,
-				 QuickPID::Action::direct);
+// QuickPID ropePID(&inlet_fluid_temp_measured, &rope_control_output, &inlet_fluid_temp_setpoint, 
+// 				 rope_Kp, rope_Ki, rope_Kd,
+// 				 QuickPID::pMode::pOnError,
+// 				 QuickPID::dMode::dOnMeas,
+// 				 QuickPID::iAwMode::iAwClamp,
+// 				 QuickPID::Action::direct);
 
 // Create timers
 Timer statusLEDTimer;
@@ -163,9 +163,9 @@ void setup() {
 	// Set the ADC settings
 	analogReadResolution(analog_resolution);		// Set the ADC resolution to n bits (set in config.h)
 	//analogReference(analog_vref);					// Set the ADC reference voltage to 3.3V rather than 5V, using external power supply set to 3.3V via oscilliscope reading
-	analogWriteResolution(analog_resolution);		// Set the DAC reso]  lution to n bits (set in config.h)
+	analogWriteResolution(10);		// Set the DAC reso]  lution to n bits (set in config.h)
 	analogWriteFrequency(HEATER_BLOCK_RELAY_CONTROL_PIN, 100);	// Set the PWM frequency to 100 Hz
-	//analogWriteFrequency(ROPE_HEATER_RELAY_CONTROL_PIN, 100);	// Set the PWM frequency to 100 kHz
+	analogWriteFrequency(ROPE_HEATER_RELAY_CONTROL_PIN, 100);	// Set the PWM frequency to 100 kHz
 
 	// --------------------------- PIN SETUP ---------------------------	
 	// Setup the pins for the Teensy input and output
@@ -199,9 +199,9 @@ void setup() {
 	measureThermocoupleTimer.start();
 
 	// --------------------------- INLET FLUID TEMP PID SETUP ---------------------------
-	ropePID.SetOutputLimits(0, window_size_ms);
-	ropePID.SetSampleTimeUs(window_size_ms * 1000);
-	ropePID.SetMode(QuickPID::Control::automatic);
+	// ropePID.SetOutputLimits(0, window_size_ms);
+	// ropePID.SetSampleTimeUs(window_size_ms * 1000);
+	// ropePID.SetMode(QuickPID::Control::automatic);
 }
 
 void loop() {
@@ -221,28 +221,43 @@ void loop() {
 	// Run the PID loop, the temperatures setpoint is automatically updated via the save_data_from_pc function
 	// rope_control_output is the TIME in milliseconds that the rope heater should be on, this is calculated in the PID controller
 	// the control pins need to be PWM enabled for this to work
+	float temp_1_power_cutoff = inlet_fluid_temp_setpoint - 10.0F;
+	float temp_2_power_cutoff = inlet_fluid_temp_setpoint - 5.0F;
+	float temp_3_power_cutoff = inlet_fluid_temp_setpoint - 1.0F;
+	uint16_t analog_write_value = 1023;		// using 10 bit DAC
+
 	if (rope_heater_enable){
-		unsigned long ms_now = millis();
-		if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
-		if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
-			if (ms_now > next_switch_time){
-				relay_status = true;
-				next_switch_time = ms_now + debounce_delay_ms;
-				//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, max_analog);		// Use analog write to replace digitla write high
-				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
-			}
-		} else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
-			if (ms_now > next_switch_time){
-				relay_status = false;
-				next_switch_time = ms_now + debounce_delay_ms;
-				//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
-				digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
-			}
+		// Instead of PID computation, just use bang bang control. We are 100% on until temp is within 5 degrees, then 50% until temp is within 1 degree, then 10% until temp is within 0.5 degrees. Anything over target temp is 0%
+		if (inlet_fluid_temp_measured < temp_1_power_cutoff){
+			analog_write_value = uint16_t(analog_write_value * 1.0F);		// 100% power
+		} else if (inlet_fluid_temp_measured < temp_2_power_cutoff){
+			analog_write_value = uint16_t(analog_write_value * 0.5F);		// 50% power
+		} else if (inlet_fluid_temp_measured < temp_3_power_cutoff){
+			analog_write_value = uint16_t(analog_write_value * 0.1F);		// 10% power
+		} else {
+			analog_write_value = 0;
 		}
+		analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, analog_write_value);
+		// unsigned long ms_now = millis();
+		// if (ropePID.Compute()) {window_start_time = ms_now;}		// Reset the window start time when the PID compute is done
+		// if (!relay_status && rope_control_output > (ms_now - window_start_time)) {
+		// 	if (ms_now > next_switch_time){
+		// 		relay_status = true;
+		// 		next_switch_time = ms_now + debounce_delay_ms;
+		// 		//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, max_analog);		// Use analog write to replace digitla write high
+		// 		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, HIGH);
+		// 	}
+		// } else if (relay_status && rope_control_output < (ms_now - window_start_time)) {
+		// 	if (ms_now > next_switch_time){
+		// 		relay_status = false;
+		// 		next_switch_time = ms_now + debounce_delay_ms;
+		// 		//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
+		// 		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
+		// 	}
 	} else {
 		// Make sure the rope heater is off if it's disabled
-		//analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
-		digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
+		analogWrite(ROPE_HEATER_RELAY_CONTROL_PIN, 0);
+		//digitalWrite(ROPE_HEATER_RELAY_CONTROL_PIN, LOW);
 	}
 
 	// --------------------------- Control the heater block ---------------------------

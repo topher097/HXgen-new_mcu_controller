@@ -106,7 +106,7 @@ void fast_led_blink(){
 const float AUDIO_DRIVER_MIN_VPP = 0.0;  
 const float AUDIO_DRIVER_MAX_VPP = 1.44;        // This was measured at volume=1.0 and amplitude=1.0, max value, on oscilliscope
 const float AMPLIFIER_GAIN = 100.0;             // Gain of the amplifier
-const float MAX_AMPLIFIER_OUTPUT_VPP = 150.0;   // Max output amplitude of the amplifier (+/- VPP/2)
+const float MAX_AMPLIFIER_OUTPUT_VPP = 300.0;   // Max output amplitude of the amplifier (+/- VPP/2)
 
 float calculate_amplitude_from_vpp(float piezo_vpp) {
     // Limit the piezo vpp to the max and min values
