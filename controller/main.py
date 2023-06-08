@@ -1,11 +1,19 @@
 import numpy as np
 import os
 import sys
+from pathlib import Path
+
+# Add the path of the main HX2.5 new microcontroller code to the path so that the pyEasyTransfer module can be imported
+parent_dir = Path(__file__).parent.parent
+sys.path.append(os.path.join(parent_dir))
+python_EasyTransfer_dir = os.path.join(parent_dir, "python_EasyTransfer")
+sys.path.append(python_EasyTransfer_dir)
 
 import asyncio
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
-from pyEasyTransfer import PyEasyTransfer, ETDataArrays
+from python_EasyTransfer.pyEasyTransfer import PyEasyTransfer
+from python_EasyTransfer.ETData import ETDataArrays
 from application import MainWindow
 import logger
 import signal
@@ -24,7 +32,7 @@ class HXController:
         input_struct_def {dict[str, np.dtype]} -- Dictionary of the input struct definition
         output_struct_def {dict[str, np.dtype]} -- Dictionary of the output struct definition
         byte_order {str} -- Byte order to use when packing and unpacking data
-        save_read_data {Optional[IODataArrays]} -- IODataArrays object to store the data received from the Arduino (default: {None})
+        save_read_data {Optional[ETDataArrays]} -- ETDataArrays object to store the data received from the Arduino (default: {None})
     """
     def __init__(self, log_dir: str, 
                  input_data_rate: int, test_time: int,
@@ -86,7 +94,7 @@ class HXController:
         await serial_connection.close()
 
 
-# Input data from the serial connection struct definition, exactly as defined in the Arduino code
+# Input data from the monitor serial connection struct definition, exactly as defined in the Arduino code
 monitor_input_struct_def = {"time_ms": np.uint32,
                             "time_us": np.uint32,
                             "inlet_fluid_temp_c": np.float32,
@@ -110,7 +118,7 @@ monitor_input_struct_def = {"time_ms": np.uint32,
                             "thermistor_14_temp_c": np.float32
                             }
 
-# Output data to the serial connection struct definition, exactly as defined in the Arduino code
+# Output data to the monitor serial connection struct definition, exactly as defined in the Arduino code
 monitor_output_struct_def    = {"reset_time": np.bool_,
                                 "heater_block_enable": np.bool_,
                                 "rope_heater_enable": np.bool_,
@@ -118,6 +126,7 @@ monitor_output_struct_def    = {"reset_time": np.bool_,
                                 "inlet_fluid_temp_setpoint_c": np.float32
                                 }
 
+# Input data from the driver serial connection struct definition, exactly as defined in the Arduino code
 driver_input_struct_def = {"time_ms": np.uint32,
                            "time_us": np.uint32,
                            "signal_type_piezo_1": np.uint8,
@@ -134,6 +143,7 @@ driver_input_struct_def = {"time_ms": np.uint32,
                            "outlet_flow_sensor_ml_min": np.float32
                            }
 
+# Output data to the driver serial connection struct definition, exactly as defined in the Arduino code
 driver_output_struct_def = {"reset_time": np.bool_,
                             "signal_type_piezo_1": np.uint8,
                             "signal_type_piezo_2": np.uint8,
@@ -160,7 +170,7 @@ if __name__ == "__main__":
     byte_format         = 'little-endian'
     input_data_rate     = 20                # Number of data points received per second (get from arduino code)
     test_time           = 120               # Number of seconds to run the test for
-    max_ele             = int(input_data_rate*test_time*1.1)
+    max_ele             = int(input_data_rate*test_time*1.4)
     monitor_save_read_data  = ETDataArrays(monitor_input_struct_def, name='monitor', max_elements=max_ele)     # initialize for test with some extra space
     driver_save_read_data   = ETDataArrays(driver_input_struct_def, name='driver', max_elements=max_ele)       # initialize for test with some extra space
     valve_save_read_data    = ETDataArrays(valve_input_struct_def, name='valve', max_elements=max_ele)         # initialize for test with some extra space

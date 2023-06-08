@@ -707,7 +707,7 @@ class MainWindow(QMainWindow):
             self.ET_driver.stop_saving()
             # Stop the piezos
             self.log.debug("Stopping piezos")
-            self.driver_output_data.reset_time = np.bool_(False)
+            self.driver_output_data.reset_time = np.bool_(True)
             self.driver_output_data.piezo_1_enable = np.bool_(False)
             self.driver_output_data.piezo_2_enable = np.bool_(False)
             await self.ET_driver.send_data()        # Send the data to the Driver

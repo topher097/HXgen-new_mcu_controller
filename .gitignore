@@ -7,3 +7,4 @@
 .venv
 controller/logs/
 controller/data/
+analysis/logs/

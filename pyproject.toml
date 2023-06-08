@@ -8,7 +8,7 @@ packages = [{include = "hxgen_new_mcu_controller"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.12"
-poetry = "^1.5.0"
+poetry = "^1.5.1"
 opencv-python = "^4.7.0.72"
 PySide6 = "^6.5.0"
 pyqtgraph = "^0.13.3"
@@ -19,6 +19,7 @@ matplotlib = "^3.7.1"
 colour = "^0.1.5"
 open3d = "0.17.0"
 pandas = "^2.0.1"
+pandasai = "^0.1.0"
 pyserial = "^3.5"
 pyserial-asyncio = "^0.6"
 pyautogui = "^0.9.53"
@@ -27,8 +28,9 @@ mat73 = "^0.60"
 sympy = "^1.12"
 colorlog = "^6.7.0"
 qasync = "^0.24.0"
-pySerialTransfer = { git = "https://github.com/topher097/async-pySerialTransfer.git", branch = "async" }
 serial = "^0.0.97"
+pykalman = "^0.9.5"
+seaborn = "^0.12.2"
 
 
 [build-system]
