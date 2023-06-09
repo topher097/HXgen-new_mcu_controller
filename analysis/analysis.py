@@ -363,7 +363,6 @@ class Plotter:
         dataset: 
             timestamp (str): df (pd.DataFrame)
         """ 
-        #sns.set_theme()
         sns.set_style("ticks", {'grid.color': '.9', 'axes.grid': True})
         for dataset_name, dataset in self.datasets.items():
             # Get the number of subplots we will need and set the rows and columns accordingly
@@ -379,16 +378,15 @@ class Plotter:
             fig.suptitle(f"Thermistor Data for {dataset_name}", fontsize=16)
             
             for timestamp, df in dataset.items():
-                df: pd.DataFrame = df   # Set the type
+                timestamp: str = timestamp      # Set the type
+                df: pd.DataFrame = df           # Set the type
+
                 # Calculate the current row and column of the subplot and the axis
                 row = sp_count // cols
                 col = sp_count % cols
-                if rows == 1:
-                    ax = axs[col]
-                elif cols == 1:
-                    ax = axs[row]
-                else:
-                    ax = axs[row, col]
+                if rows == 1: ax = axs[col]
+                elif cols == 1: ax = axs[row]
+                else: ax = axs[row, col]
                 
                 # Skip the non-filtered data
                 if 'filtered' not in timestamp:
@@ -404,10 +402,9 @@ class Plotter:
                 piezo_1_enable_data = df['driver_piezo_1_enable'].to_numpy()
                 piezo_on_index = np.where(piezo_1_enable_data == 1)[0][0]
                 
-                # Plot the data
+                # Get the x and y data, trim the data first and last 5 points
                 x = df.index / 1000     # ms to s
                 y = df[thermistor_names]
-                # Trim the data to get rid of the first and last 5 points
                 x = x[5:-5]
                 y = y[5:-5]
                 
@@ -421,7 +418,7 @@ class Plotter:
                 df_plot.set_index('Seconds', inplace=True)
                 
                 # Filter the thermistor data even more
-                df_filtered = df_plot.apply(lambda x: utils.filter_data(x, 'savgol', {'window_length': 8, 'polyorder': 4}), axis=0)
+                df_filtered: pd.DataFrame = df_plot.apply(lambda x: utils.filter_data(x, 'savgol', {'window_length': 8, 'polyorder': 4}), axis=0)
                 df_filtered = df_filtered.apply(lambda x: utils.filter_data(x, 'moving_average', {'window_length': 5}), axis=0)
                 df_filtered = df_filtered.apply(lambda x: utils.filter_data(x, 'savgol', {'window_length': 8, 'polyorder': 4}), axis=0)
                 df_melted = df_filtered.reset_index().melt(id_vars="Seconds", var_name="Measurements", value_name="Temperature")    
