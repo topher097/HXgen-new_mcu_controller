@@ -4,21 +4,27 @@
 """PySide6 port of the qt3d/simple-cpp example from Qt v5.x"""
 import logging
 
-import pyEasyTransfer
-from pyEasyTransfer import PyEasyTransfer
-
+import os
 import sys
-from enum import IntEnum, auto
-from dataclasses import dataclass
-from PySide6.QtCore import (QMutex, Qt, QTimer, Slot, QRect, QSize)
-from PySide6.QtGui import (QMatrix4x4, QQuaternion, QVector3D, QWindow, QFont)
-from PySide6.QtWidgets import (QMainWindow, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QTextEdit, QLayout, QLayoutItem, QTextBrowser, QWidgetItem)
+from pathlib import Path
+
+# Add the path of the main HX2.5 new microcontroller code to the path so that the pyEasyTransfer module can be imported
+parent_dir = Path(__file__).parent.parent
+sys.path.append(os.path.join(parent_dir))
+python_EasyTransfer_dir = os.path.join(parent_dir, "python_EasyTransfer")
+sys.path.append(python_EasyTransfer_dir)
+from python_EasyTransfer.pyEasyTransfer import PyEasyTransfer
+from python_EasyTransfer.utils import save_ETDataArrays
+
+from PySide6.QtCore import QMutex, Qt, QTimer
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QMainWindow, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QVBoxLayout, QWidget, QTextEdit, QComboBox
 import pyqtgraph as pg
 import asyncio
 
 
 # Import custom Qt elements
-from application_elements import CentralWidget, MplCanvas, ListSlider, QLoggerStream
+from application_elements import CentralWidget, QLoggerStream
 
 
 # Other imports
@@ -28,17 +34,19 @@ import qasync
 
 """ These are the limits to sliders and other variables """
 # -------------------- Piezo attributes --------------------
+piezo_waveform_map = {"Sine": 0, "Square": 1, "Triangle": 2, "Sawtooth": 3, "Noise": 4, "Sweep": 5}
+
 # Frequency
-piezo_default_signal_type = 4
-piezo_min_freq = 175
-piezo_max_freq = 5000
+piezo_default_signal_type = 0  
+piezo_min_freq = 0
+piezo_max_freq = 1500
 piezo_freq_step = 5
-piezo_default_freq = 1000
+piezo_default_freq = 653.0
 # Amplitude
 piezo_min_vpp = 0.0
-piezo_max_vpp = 300.00
-piezo_vpp_step = 1
-piezo_default_vpp = 200.0
+piezo_max_vpp = 100.0
+piezo_vpp_step = 5.0
+piezo_default_vpp = 20.00   
 # Phase
 piezo_min_phase = 0.0
 piezo_max_phase = 360.0
@@ -53,7 +61,7 @@ piezo_2_enable = False
 rope_min_temp = 20
 rope_max_temp = 50
 rope_temp_step = 0.5
-rope_default_temp = 30
+rope_default_temp = 25
 rope_heat_enable = False
 
 # -------------------- Heater Block attributes --------------------
@@ -63,7 +71,7 @@ Heater_block_max_temp = 160     # If this is ever reached, the heater block shou
 heat_flux_min = 0
 heat_flux_max = 30
 heat_flux_step = 0.1
-heat_flux_default = 5
+heat_flux_default = 6
 heat_block_enable = False
 
 # -------------------- GUI attributes --------------------
@@ -75,8 +83,6 @@ min_width_slider = 30
     
 """Create the main window for the application"""
 class MainWindow(QMainWindow):
-  
-    
     def __init__(self, window_title: str, 
                  loop: qasync.QEventLoop, 
                  log: logging.Logger, 
@@ -191,7 +197,7 @@ class MainWindow(QMainWindow):
         # -------------------------------- PIEZO 1 ELEMENTS --------------------------------
         self.log.debug("Creating piezo 1 elements")
         # Create a slider for the frequency of the piezo 1
-        self.piezo_1_freq_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_1_freq_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_1_freq_slider.setMinimum(piezo_min_freq)
         self.piezo_1_freq_slider.setMaximum(piezo_max_freq)
         self.piezo_1_freq_slider.setTickInterval(piezo_freq_step)
@@ -208,7 +214,7 @@ class MainWindow(QMainWindow):
         
         
         # Create a slider for the amplitude of the piezo 1
-        self.piezo_1_amp_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_1_amp_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_1_amp_slider.setMinimum(piezo_min_vpp)
         self.piezo_1_amp_slider.setMaximum(piezo_max_vpp)
         self.piezo_1_amp_slider.setTickInterval(piezo_vpp_step)
@@ -224,7 +230,7 @@ class MainWindow(QMainWindow):
         self.piezo_1_amp_widget.setLayout(piezo_1_amp_layout)
                 
         # Create a slider for the phase of the piezo 1
-        self.piezo_1_phase_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_1_phase_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_1_phase_slider.setMinimum(piezo_min_phase)
         self.piezo_1_phase_slider.setMaximum(piezo_max_phase)
         self.piezo_1_phase_slider.setTickInterval(piezo_phase_step)
@@ -247,11 +253,17 @@ class MainWindow(QMainWindow):
         self.piezo_1_enable_button.setSizePolicy(button_size_policy)
         self.piezo_1_enable_button.setStyleSheet(button_style)
         
+        # # Create a drop down list for the piezo 1 waveform
+        # self.piezo_1_waveform_dropdown = QComboBox(self)
+        # self.piezo_1_waveform_dropdown.addItems(piezo_waveform_map.keys())   
+        # self.piezo_1_waveform_dropdown.setCurrentIndex(piezo_default_signal_type)
+        # self.piezo_1_waveform_dropdown.setEnabled(True)
+        
         
         # -------------------------------- PIEZO 2 ELEMENTS --------------------------------
         self.log.debug("Creating piezo 2 elements")
         # Create a slider for the frequency of the piezo 2
-        self.piezo_2_freq_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_2_freq_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_2_freq_slider.setMinimum(piezo_min_freq)
         self.piezo_2_freq_slider.setMaximum(piezo_max_freq)
         self.piezo_2_freq_slider.setTickInterval(piezo_freq_step)
@@ -267,7 +279,7 @@ class MainWindow(QMainWindow):
         self.piezo_2_freq_widget.setLayout(piezo_2_freq_layout)        
         
         # Create a slider for the amplitude of the piezo 2
-        self.piezo_2_amp_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_2_amp_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_2_amp_slider.setMinimum(piezo_min_vpp)
         self.piezo_2_amp_slider.setMaximum(piezo_max_vpp)
         self.piezo_2_amp_slider.setTickInterval(piezo_vpp_step)
@@ -283,7 +295,7 @@ class MainWindow(QMainWindow):
         self.piezo_2_amp_widget.setLayout(piezo_2_amp_layout)
         
         # Create a slider for the phase of the piezo 2
-        self.piezo_2_phase_slider = QSlider(Qt.Horizontal, self)
+        self.piezo_2_phase_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.piezo_2_phase_slider.setMinimum(piezo_min_phase)
         self.piezo_2_phase_slider.setMaximum(piezo_max_phase)
         self.piezo_2_phase_slider.setTickInterval(piezo_phase_step)
@@ -309,7 +321,7 @@ class MainWindow(QMainWindow):
         # -------------------------------- ROPE HEATER ELEMENTS --------------------------------
         self.log.debug("Creating rope heater elements")
         # Create a slider for the temperature of the inlet fluid
-        self.rope_temp_slider = QSlider(Qt.Horizontal, self)
+        self.rope_temp_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.rope_temp_slider.setMinimum(rope_min_temp)
         self.rope_temp_slider.setMaximum(rope_max_temp)
         self.rope_temp_slider.setTickInterval(rope_temp_step)
@@ -335,7 +347,7 @@ class MainWindow(QMainWindow):
         # -------------------------------- HEATER BLOCK ELEMENTS --------------------------------
         self.log.debug("Creating heater block elements")
         # Create a slider for the heat flux of the heater block
-        self.heat_flux_slider = QSlider(Qt.Horizontal, self)
+        self.heat_flux_slider = QSlider(Qt.Orientation.Horizontal, self)
         self.heat_flux_slider.setMinimum(heat_flux_min)
         self.heat_flux_slider.setMaximum(heat_flux_max)
         self.heat_flux_slider.setTickInterval(heat_flux_step)
@@ -391,7 +403,7 @@ class MainWindow(QMainWindow):
         self.preheat_button.setStyleSheet(button_style)
 
         # Create a guage for the heater block temperature
-        self.heater_block_temp_gauge = QSlider(Qt.Horizontal, self)
+        self.heater_block_temp_gauge = QSlider(Qt.Orientation.Horizontal, self)
         self.heater_block_temp_gauge.setMinimum(20)
         self.heater_block_temp_gauge.setMaximum(Heater_block_max_temp)
         self.heater_block_temp_gauge.setTickInterval(1)
@@ -407,7 +419,7 @@ class MainWindow(QMainWindow):
         self.heater_block_temp_widget.setLayout(heater_block_temp_layout)
         
         # Create a gauge for the inlet temperature
-        self.inlet_temp_gauge = QSlider(Qt.Horizontal, self)
+        self.inlet_temp_gauge = QSlider(Qt.Orientation.Horizontal, self)
         self.inlet_temp_gauge.setMinimum(20)
         self.inlet_temp_gauge.setMaximum(70)
         self.inlet_temp_gauge.setTickInterval(1)
@@ -624,6 +636,10 @@ class MainWindow(QMainWindow):
         self.test_time_timer = QTimer(self)
         self.test_time_timer.timeout.connect(self.update_test_time)
         
+        # Create a timer for the piezo sweep
+        self.piezo_sweep_timer = QTimer(self)
+        self.piezo_sweep_timer.timeout.connect(self.update_piezo_sweep)
+        
         
         
     def init_update_all_slider_elements(self):
@@ -712,10 +728,14 @@ class MainWindow(QMainWindow):
             self.driver_output_data.piezo_2_enable = np.bool_(False)
             await self.ET_driver.send_data()        # Send the data to the Driver
             # Save the data to a file
-            pyEasyTransfer.save_data_to_pickle_file(self.ET_monitor.save_read_data, dir='data')
-            pyEasyTransfer.save_data_to_pickle_file(self.ET_driver.save_read_data, dir='data')
+            save_ETDataArrays(self.ET_monitor.save_read_data, dir='data')
+            save_ETDataArrays(self.ET_driver.save_read_data, dir='data')
             self.enable_all_elements()
             self.test_time_timer.stop()
+            
+    @qasync.asyncSlot()
+    def update_piezo_sweep(self):
+        pass
 
     def create_plot_items(self):
         # Add the two plots

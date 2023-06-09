@@ -80,7 +80,7 @@ class ETDataArrays:
     def __post_init__(self):
         # Set the attributes of the class to match the struct_def and init the numpy arrays
         for variable, _dtype in self.struct_def.items():
-            setattr(self, variable, np.full(shape=int(self.max_elements), dtype=_dtype), fill_value=np.nan)     # Fill with np.nan for easy identification of empty elements
+            setattr(self, variable, np.full(shape=int(self.max_elements), dtype=_dtype, fill_value=np.nan))     # Fill with np.nan for easy identification of empty elements
         # Calculate the number of bytes in the struct_def
         self.struct_bytes = np.sum([np.dtype(dtype).itemsize for dtype in self.struct_def.values()]) 
 

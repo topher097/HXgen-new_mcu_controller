@@ -57,7 +57,7 @@ const int measurement_update_delay_ms = 100;    // Delay between measurements an
 bool print_to_serial = false;            // print to serial port
 const int SERIAL_BAUD = 115200;          // baud rate for serial communication
 bool wait_for_serial = false;            // wait for serial connection before starting program
-uint16_t measure_and_send_data_delay_ms = 1000/20;        // delay between sending data over serial port in ms
+uint16_t measure_and_send_data_delay_ms = 1000/25;        // delay between sending data over serial port in ms
 
 // Analog (ADC) settings
 int16_t analog_resolution = 12;                          // bits of resolution on ADC measurements

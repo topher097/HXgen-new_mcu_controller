@@ -16,10 +16,7 @@ from python_EasyTransfer.pyEasyTransfer import PyEasyTransfer
 from python_EasyTransfer.ETData import ETDataArrays
 from application import MainWindow
 import logger
-import signal
-from asyncio_button_helper import AsyncHelper
 
-import serial_asyncio
 from typing import Optional
 
 class HXController:
@@ -168,12 +165,11 @@ if __name__ == "__main__":
     log_dir             = os.path.join(os.getcwd(), 'logs')
     baud_rate           = 115200
     byte_format         = 'little-endian'
-    input_data_rate     = 20                # Number of data points received per second (get from arduino code)
-    test_time           = 120               # Number of seconds to run the test for
-    max_ele             = int(input_data_rate*test_time*1.4)
+    input_data_rate     = 25                # Number of data points received per second (get from arduino code)
+    test_time           = 10*60             # Number of seconds to run the test for
+    max_ele             = int(input_data_rate*test_time*1.5)
     monitor_save_read_data  = ETDataArrays(monitor_input_struct_def, name='monitor', max_elements=max_ele)     # initialize for test with some extra space
     driver_save_read_data   = ETDataArrays(driver_input_struct_def, name='driver', max_elements=max_ele)       # initialize for test with some extra space
-    valve_save_read_data    = ETDataArrays(valve_input_struct_def, name='valve', max_elements=max_ele)         # initialize for test with some extra space
     
     monitor_interface  = PyEasyTransfer(com_port="COM9", 
                                         baud_rate=baud_rate, 
@@ -192,15 +188,6 @@ if __name__ == "__main__":
                                         mode='both',
                                         save_read_data=driver_save_read_data,
                                         name="driver")
-    
-    # valve_interface    = PyEasyTransfer(com_port="COM14",
-    #                                     baud_rate=baud_rate,
-    #                                     input_struct_def=valve_input_struct_def,
-    #                                     output_struct_def=valve_output_struct_def,
-    #                                     byte_format=byte_format,
-    #                                     mode='both',
-    #                                     save_read_data=valve_save_read_data,
-    #                                     name="valve")
     
     controller = HXController(log_dir=log_dir, 
                               monitor_serial_interface=monitor_interface, 

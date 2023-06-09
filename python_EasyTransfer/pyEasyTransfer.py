@@ -7,9 +7,6 @@ from struct import Struct
 from typing import Optional, Any
 import serial_asyncio
 from ETData import ETData, ETDataArrays
-import pickle
-import os
-from datetime import datetime
 
 BYTE_FORMATS = {
     'little-endian': '<',
