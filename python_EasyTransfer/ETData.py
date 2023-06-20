@@ -3,26 +3,26 @@ import numpy as np
 
 """ Numpy dtypes for C/Arduino types
 
-numpy type                  C type              Arduino type
-------------------------------------------------------------
-numpy.bool_                 bool                bool
-numpy.byte                  signed char         byte
-numpy.ubyte                 unsigned char       char
-numpy.short                 short               int8_t
-numpy.ushort                unsigned short      uint8_t
-numpy.intc                  int                 int16_t
-numpy.uintc                 unsigned int        uint16_t
-numpy.int_                  long                int32_t
-numpy.uint                  unsigned long       uint32_t
-numpy.longlong              long long           int64_t
-numpy.ulonglong             unsigned long long  uint64_t
-numpy.half/numpy.float16    
-numpy.float32               float               float  
-numpy.double                double              double
-numpy.longdouble            long double         
-numpy.csingle               float complex       
-numpy.cdouble               double complex      
-numpy.clongdouble           long double complex  
+    numpy type                  C type              Arduino type
+    ------------------------------------------------------------
+    numpy.bool_                 bool                bool
+    numpy.byte                  signed char         byte
+    numpy.ubyte                 unsigned char       char
+    numpy.short                 short               int8_t
+    numpy.ushort                unsigned short      uint8_t
+    numpy.intc                  int                 int16_t
+    numpy.uintc                 unsigned int        uint16_t
+    numpy.int_                  long                int32_t
+    numpy.uint                  unsigned long       uint32_t
+    numpy.longlong              long long           int64_t
+    numpy.ulonglong             unsigned long long  uint64_t
+    numpy.half/numpy.float16    
+    numpy.float32               float               float  
+    numpy.double                double              double
+    numpy.longdouble            long double         
+    numpy.csingle               float complex       
+    numpy.cdouble               double complex      
+    numpy.clongdouble           long double complex  
 
 """
 

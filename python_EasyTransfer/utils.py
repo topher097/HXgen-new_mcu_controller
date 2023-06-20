@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 import pickle
-from ETData import ETDataArrays, ETData
+from ETData import ETDataArrays
 
 def save_ETDataArrays(data: ETDataArrays, dir: str, filename: str=None) -> None:
     """Save the current ETDataArrays object to a pickle file.
@@ -46,6 +46,6 @@ def load_ETDataArrays(dir: str, filename: str) -> ETDataArrays:
         data = pickle.load(f)
         
     # Confirm it is a valid ETDataArrays object
-    if not isinstance(data, ETDataArrays):
+    if not type(data).__name__ == 'ETDataArrays':
         raise TypeError(f"Loaded data is not of type ETDataArrays, it is of type {type(data)}")
     return data
