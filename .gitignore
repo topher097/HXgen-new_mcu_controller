@@ -34,7 +34,7 @@ wandb_api_key.yaml
 *.code-workspace
 
 # Python runtime files
-*__pycache__*
+**/__pycache__
 *.npy
 *.pyc
 
@@ -42,3 +42,4 @@ wandb_api_key.yaml
 *.log
 
 *.gz
+__pycache__

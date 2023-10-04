@@ -32,6 +32,9 @@ class Plotter:
         self.datasets = analysis.analyzed_datasets      # Dict of datasets that have been processed and analyzed
         self.log = log
         self.clear_saved = clear_saved
+        
+        self.fig_w = 20
+        self.fig_h = 12
 
         # Create the directory to save the plots in
         self.save_plot_dir = Path(save_plot_parent_dir, analysis.get_filename())
@@ -94,7 +97,7 @@ class Plotter:
                 n_cols = 1
                 ratios = [1/n_rows] * n_rows        # Equal height subplots
                 grid = dict(hspace=0.0, height_ratios=ratios)
-                fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(12, 12), sharex=True, gridspec_kw=grid)
+                fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(self.fig_w, self.fig_h), sharex=True, gridspec_kw=grid)
                 fig.suptitle(f'{dataset_name} - {timestamp}', fontsize=16)
                 
                 # Plot the thermistor data
@@ -198,7 +201,7 @@ class Plotter:
             grid = dict(hspace=0.0, height_ratios=h_ratios)
             
             # Create figure with subplots for each timestamp in the dataset
-            fig, axs = plt.subplots(nrows=n_rows, ncols=cols, figsize=(12, 12), gridspec_kw=grid)     # we want the inlet flow on the top and the outlet flow on the bottom per timestamp, and an invisible plot hence multiply rows by 3
+            fig, axs = plt.subplots(nrows=n_rows, ncols=cols, figsize=(self.fig_w, self.fig_h), gridspec_kw=grid)     # we want the inlet flow on the top and the outlet flow on the bottom per timestamp, and an invisible plot hence multiply rows by 3
             sp_count = 0    # Subplot count
             fig.suptitle(f"Flow Data for '{dataset_name.replace('_', ' ')}' Dataset", fontsize=16)
             
@@ -339,7 +342,7 @@ class Plotter:
             rows, cols = self._optimal_subplot_grid(num_subplots, max_num_rows, max_num_columns)
             #print(rows, cols)
             # Create figure with subplots for each timestamp in the dataset
-            fig, axs = plt.subplots(rows, cols, figsize=(12, 12))
+            fig, axs = plt.subplots(rows, cols, figsize=(self.fig_w, self.fig_h))
             sp_count = 0    # Subplot count
             fig.suptitle(f"Thermistor Data for '{dataset_name.replace('_', ' ')}' Dataset", fontsize=16)
             

@@ -28,20 +28,25 @@ def run():
     # Main directories
     data_folder_name = "interest_data"
     
-    # First dataset
-    dataset_1_name = "single_vertical_piezo_10mm_wall_pyramids"
-    data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_1_name)
-    dataset_1_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
+    # # First dataset
+    # dataset_1_name = "single_vertical_piezo_10mm_wall_pyramids"
+    # data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_1_name)
+    # dataset_1_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
     
-    # second dataset
-    dataset_2_name = "single_vertical_piezo_15mm_wall"
-    data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_2_name)
-    dataset_2_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
+    # # second dataset
+    # dataset_2_name = "single_vertical_piezo_15mm_wall"
+    # data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_2_name)
+    # dataset_2_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
     
     # Long pyramid tests dataset
-    dataset_long_pyramid_name = "long_10mm_pyramid"
+    dataset_long_pyramid_name = "long_svp_10mm_pyramid"
     data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_long_pyramid_name)
     dataset_long_pyramid_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
+    
+    # # Long pyramid tests dataset
+    # dataset_long_pyramid_name = "short_svp_15mm_control"
+    # data_folder_path = os.path.join(parent_dir, data_folder_name, dataset_long_pyramid_name)
+    # dataset_long_pyramid_filepaths = [os.path.join(data_folder_path, file) for file in os.listdir(data_folder_path) if file.endswith(".pkl")]
     
     # Create datasets dictionary
     # datasets = {dataset_1_name: dataset_1_filepaths,
@@ -61,13 +66,14 @@ def run():
     
     # Load the analysis
     #analysis_filename = "analysis_single_vertical_piezo_10mm_wall_pyramids_single_vertical_piezo_15mm_wall.pkl"
-    analysis_filename = "analysis_long_10mm_pyramid.pkl"
-    analysis = load_analysis(analysis_save_dir=saved_analysis_dir, analysis_filename=analysis_filename, log=logger.log)
+    #analysis_filename = "analysis_long_10mm_pyramid.pkl"
+    #analysis = load_analysis(analysis_save_dir=saved_analysis_dir, analysis_filename=analysis_filename, log=logger.log)
     plotter = Plotter(analysis=analysis, save_plot_parent_dir=saved_plotting_dir, log=logger.log)
     plotter.plot()
     
     
 if __name__ == "__main__":
+    print("running analysis")
     # Run the analsis and plotter
     run()
     
