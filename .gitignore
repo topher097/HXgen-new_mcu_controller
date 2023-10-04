@@ -8,3 +8,37 @@
 controller/logs/
 controller/data/
 analysis_code/logs/
+
+
+# Ignore any secret files (authentication token files)
+wandb_api_key.yaml
+
+# Applications
+*.app
+*.exe
+*.war
+
+# Large media files
+*.mp4
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
+
+# Venv and cache folders
+/.venv
+/.cache
+
+# VSCode workspace file
+*.code-workspace
+
+# Python runtime files
+*__pycache__*
+*.npy
+*.pyc
+
+# Log files
+*.log
+
+*.gz
